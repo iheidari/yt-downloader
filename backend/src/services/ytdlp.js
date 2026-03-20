@@ -203,14 +203,13 @@ async function downloadAudio(url, formatId, downloadId, onProgress) {
   const outputTemplate = path.join(downloadPath, '%(title)s.%(ext)s');
 
   try {
+    // Download audio-only format directly without re-encoding
+    // This preserves the original file size and quality
     await runYtDlp([
       '-f', formatId,
       '-o', outputTemplate,
       '--newline',
       '--progress',
-      '--extract-audio',
-      '--audio-format', 'mp3',
-      '--audio-quality', '0',
       '--no-playlist',
       url
     ], {
@@ -224,7 +223,7 @@ async function downloadAudio(url, formatId, downloadId, onProgress) {
 
     const files = fs.readdirSync(downloadPath);
     const audioFile = files.find(f => 
-      ['.mp3', '.m4a', '.webm', '.ogg', '.opus'].some(ext => f.endsWith(ext))
+      ['.mp3', '.m4a', '.webm', '.ogg', '.opus', '.wav', '.flac'].some(ext => f.toLowerCase().endsWith(ext))
     );
 
     if (!audioFile) {

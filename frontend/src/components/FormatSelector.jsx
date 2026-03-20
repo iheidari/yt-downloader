@@ -132,7 +132,7 @@ function FormatSelector({ info, onDownload, onCancel }) {
 
       {info.formats.audio.length > 0 && (
         <div className="format-section">
-          <h3><Music size={18} style={{ marginRight: 8 }} /> Audio Only</h3>
+          <h3><Music size={18} style={{ marginRight: 8 }} /> Audio Only (Original Format)</h3>
           <div className="format-list">
             {info.formats.audio.map((format) => (
               <label key={format.formatId} className="format-option">
@@ -146,7 +146,7 @@ function FormatSelector({ info, onDownload, onCancel }) {
                   }}
                 />
                 <div className="format-info">
-                  <span className="format-label">{format.abr} kbps</span>
+                  <span className="format-label">{format.abr} kbps • {format.acodec}</span>
                   <span className="format-details">
                     {format.ext.toUpperCase()} • {formatFileSize(format.filesize)}
                   </span>
