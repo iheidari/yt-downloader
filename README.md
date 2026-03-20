@@ -1,0 +1,333 @@
+# YouTube Video Downloader
+
+A full-stack web application for downloading videos from YouTube and other platforms using yt-dlp. Features include video/audio quality selection, real-time download progress, in-browser streaming, and download history management.
+
+## Architecture
+
+```
+yt-downloader/
+├── backend/               # Node.js Express API server
+│   ├── src/
+│   │   ├── server.js      # Express app configuration
+│   │   ├── routes/        # API endpoints
+│   │   │   ├── info.js         # Video info endpoint
+│   │   │   ├── download.js     # Download endpoint
+│   │   │   └── files.js        # File serving endpoints
+│   │   ├── services/      # Business logic
+│   │   │   ├── ytdlp.js        # yt-dlp wrapper
+│   │   │   └── cleanup.js      # Auto-cleanup service
+│   │   └── utils/         # Utilities
+│   │       └── storage.js      # File management
+│   └── downloads/         # Temporary storage directory
+├── frontend/              # Vite + React SPA
+│   └── src/
+│       ├── App.jsx        # Main app component
+│       └── components/    # React components
+│           ├── UrlInput.jsx
+│           ├── FormatSelector.jsx
+│           ├── ProgressBar.jsx
+│           ├── VideoPlayer.jsx
+│           └── DownloadHistory.jsx
+└── start.sh               # Convenience startup script
+```
+
+## Technologies
+
+### Backend
+- **Node.js 18+** - Runtime environment
+- **Express.js** - Web framework
+- **yt-dlp** - Video downloading engine (CLI tool)
+- **helmet** - Security headers
+- **cors** - Cross-origin resource sharing
+- **morgan** - HTTP request logging
+- **uuid** - Unique ID generation
+
+### Frontend
+- **Vite 5+** - Build tool and dev server
+- **React 18** - UI library
+- **Axios** - HTTP client (for info fetch)
+- **lucide-react** - Icon library
+- **CSS Modules** - Component styling
+
+## Features
+
+- **Video Quality Selection**: Choose from 360p to 4K+ resolutions
+- **Audio Extraction**: Download audio-only files
+- **High Quality Support**: Automatically merges high-res video with audio
+- **Real-time Progress**: Watch download progress with Server-Sent Events (SSE)
+- **In-browser Player**: Stream videos directly in the browser
+- **Download History**: View, play, and manage previous downloads
+- **Auto-cleanup**: Files automatically deleted after 24 hours
+- **Unicode Support**: Handles filenames with special characters (Arabic, Persian, etc.)
+- **Responsive Design**: Works on desktop and mobile devices
+
+## Prerequisites
+
+Before running the application, ensure you have:
+
+1. **Node.js 18+** installed
+   - Check: `node --version`
+   - Download: https://nodejs.org/
+
+2. **yt-dlp** installed on your system
+   
+   **macOS:**
+   ```bash
+   brew install yt-dlp
+   ```
+   
+   **Ubuntu/Debian:**
+   ```bash
+   sudo apt update
+   sudo apt install yt-dlp
+   ```
+   
+   **Windows:**
+   Download from: https://github.com/yt-dlp/yt-dlp/releases
+   
+   **Verify installation:**
+   ```bash
+   yt-dlp --version
+   ```
+
+## Installation
+
+1. **Clone or create the project directory:**
+   ```bash
+   mkdir yt-downloader
+   cd yt-downloader
+   ```
+
+2. **Install backend dependencies:**
+   ```bash
+   cd backend
+   npm install
+   ```
+
+3. **Install frontend dependencies:**
+   ```bash
+   cd ../frontend
+   npm install
+   ```
+
+## Running the Application
+
+### Option 1: Using the start script (Recommended)
+
+From the project root:
+```bash
+./start.sh
+```
+
+This will:
+- Check for yt-dlp installation
+- Start the backend server on port 3001
+- Start the frontend dev server on port 5173
+
+### Option 2: Manual startup
+
+**Terminal 1 - Backend:**
+```bash
+cd backend
+npm run dev
+```
+
+**Terminal 2 - Frontend:**
+```bash
+cd frontend
+npm run dev
+```
+
+### Access the application
+
+- **Frontend:** http://localhost:5173
+- **Backend API:** http://localhost:3001
+- **Health Check:** http://localhost:3001/health
+
+## Configuration
+
+### Environment Variables
+
+Create `.env` files in the respective directories:
+
+**backend/.env:**
+```env
+PORT=3001
+FRONTEND_URL=http://localhost:5173
+NODE_ENV=development
+```
+
+**frontend/.env:**
+```env
+VITE_API_URL=http://localhost:3001
+```
+
+### Download Cleanup
+
+Files are automatically deleted after **24 hours**. To adjust:
+
+Edit `backend/src/services/cleanup.js`:
+```javascript
+const MAX_FILE_AGE_HOURS = 24;  // Change to desired hours
+```
+
+## API Endpoints
+
+### Video Info
+```
+GET /api/info?url=<video_url>
+```
+Returns video metadata and available formats.
+
+### Start Download
+```
+POST /api/download
+Content-Type: application/json
+
+{
+  "url": "https://www.youtube.com/watch?v=...",
+  "formatId": "22",
+  "type": "combined",
+  "title": "Video Title",
+  "thumbnail": "https://..."
+}
+```
+
+### Download Progress (SSE)
+```
+GET /api/download/progress/:downloadId?url=...&formatId=...&type=...
+```
+Stream real-time download progress.
+
+### List Downloads
+```
+GET /api/files
+```
+Returns all active downloads on the server.
+
+### Stream/Download File
+```
+GET /api/files/:downloadId/:filename?action=download
+```
+- Without `action=download`: Stream in browser
+- With `action=download`: Force file download
+
+### Delete Download
+```
+DELETE /api/files/:downloadId
+```
+
+## Usage Guide
+
+1. **Enter Video URL**
+   - Paste a YouTube (or other supported platform) URL
+   - Click "Get Info"
+
+2. **Select Quality**
+   - **Video Quality (HD/4K)** - High quality options (1080p, 4K, etc.)
+   - **Ready to Use (Pre-merged)** - Lower quality but ready immediately
+   - **Audio Only** - Audio extraction
+
+3. **Download**
+   - Click "Download" button
+   - Watch real-time progress bar
+
+4. **Play or Download**
+   - Stream directly in the browser
+   - Click "Download File" to save to your device
+   - Click "Open in New Tab" for full-screen viewing
+
+5. **Manage History**
+   - View all downloads in the history section below
+   - Shows remaining time before auto-deletion
+   - Click "Play" to stream again
+   - Click "Delete" to remove permanently
+
+## Supported Platforms
+
+yt-dlp supports hundreds of video platforms, including:
+- YouTube
+- Vimeo
+- Dailymotion
+- Facebook
+- Twitter/X
+- TikTok
+- Instagram
+- And many more...
+
+## Troubleshooting
+
+### "yt-dlp not found" error
+```bash
+# macOS
+brew install yt-dlp
+
+# Ubuntu/Debian
+sudo apt install yt-dlp
+
+# Or use pip
+pip install yt-dlp
+```
+
+### Video won't play in browser
+- Some formats (MKV, WebM) may not play in all browsers
+- Try "Open in New Tab" or download the file
+- Chrome/Firefox have the best video codec support
+
+### "Failed to load media" error
+- The file may have been cleaned up (24-hour limit)
+- Re-download the video
+
+### CORS errors
+- Ensure backend and frontend are running on correct ports
+- Check CORS configuration in `backend/src/server.js`
+
+### History lost on refresh
+- Check browser's localStorage is enabled
+- Look for console errors about localStorage access
+- Try in a different browser/incognito mode
+
+## Development
+
+### Backend Development
+```bash
+cd backend
+npm run dev  # Uses nodemon for auto-reload
+```
+
+### Frontend Development
+```bash
+cd frontend
+npm run dev  # Uses Vite dev server
+```
+
+### Production Build
+```bash
+cd frontend
+npm run build  # Creates dist/ folder
+```
+
+## Security Considerations
+
+- Downloads are stored temporarily and auto-deleted
+- CORS is configured for localhost development only
+- Helmet provides security headers but CSP is disabled for video streaming
+- No authentication is implemented (single-user tool)
+
+## Contributing
+
+This is a single-user tool designed for personal use. To add authentication or multi-user support:
+1. Add user session management
+2. Associate downloads with user IDs
+3. Update cleanup service to respect user data
+4. Add persistent database (PostgreSQL, MongoDB, etc.)
+
+## License
+
+MIT License - Feel free to use, modify, and distribute.
+
+## Acknowledgments
+
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - The powerful video downloader this project is built on
+- [Vite](https://vitejs.dev/) - Fast frontend tooling
+- [React](https://react.dev/) - UI library
