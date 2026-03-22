@@ -8,7 +8,6 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,  // No source maps in production
-    minify: 'terser',  // Aggressive minification
     target: 'es2020',  // Modern browser support
     rollupOptions: {
       output: {
