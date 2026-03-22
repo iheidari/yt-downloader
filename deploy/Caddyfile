@@ -1,6 +1,6 @@
 ytd.heidari.ca {
     # Serve static frontend files
-    root * /data/ytl/frontend/dist
+    root * /data/ytd/frontend/dist
     file_server
     
     # API routes → Backend
@@ -39,7 +39,7 @@ ytd.heidari.ca {
     
     # Logging
     log {
-        output file /data/ytl/logs/caddy-access.log
+        output file /data/ytd/logs/caddy-access.log
         format json
     }
 }

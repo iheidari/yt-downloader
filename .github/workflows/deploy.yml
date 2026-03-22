@@ -43,21 +43,22 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22222
           script_stop: true
           script: |
             echo "🚀 Starting deployment to ytd.heidari.ca..."
             
             # Create necessary directories
-            mkdir -p /data/ytl/logs
-            mkdir -p /data/ytl/backend/downloads
+            mkdir -p /data/ytd/logs
+            mkdir -p /data/ytd/backend/downloads
             
             # Backup ecosystem config if it exists
-            if [ -f /data/ytl/deploy/ecosystem.config.js ]; then
-              cp /data/ytl/deploy/ecosystem.config.js /tmp/ecosystem.config.js.backup
+            if [ -f /data/ytd/deploy/ecosystem.config.js ]; then
+              cp /data/ytd/deploy/ecosystem.config.js /tmp/ecosystem.config.js.backup
             fi
             
             # Remove old deployment (preserving downloads and logs)
-            cd /data/ytl
+            cd /data/ytd
             rm -rf backend/src backend/package*.json frontend node_modules deploy 2>/dev/null || true
       
       - name: Copy files to server
@@ -66,8 +67,9 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22222
           source: "backend,frontend/dist,deploy"
-          target: "/data/ytl"
+          target: "/data/ytd"
           strip_components: 0
       
       - name: Finalize deployment
@@ -76,8 +78,9 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22222
           script: |
-            cd /data/ytl
+            cd /data/ytd
             
             echo "📦 Installing production dependencies..."
             cd backend

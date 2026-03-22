@@ -2,9 +2,7 @@ module.exports = {
   apps: [{
     name: 'yt-downloader-api',
     script: './src/server.js',
-    cwd: '/data/ytl/backend',
-    instances: 1,
-    exec_mode: 'fork',
+    cwd: '/data/ytd/backend',
     env: {
       NODE_ENV: 'production',
       PORT: 3001,
@@ -15,8 +13,8 @@ module.exports = {
       PORT: 3001,
       FRONTEND_URL: 'https://ytd.heidari.ca'
     },
-    error_file: '/data/ytl/logs/api-error.log',
-    out_file: '/data/ytl/logs/api-out.log',
+    error_file: '/data/ytd/logs/api-error.log',
+    out_file: '/data/ytd/logs/api-out.log',
     log_date_format: 'YYYY-MM-DD HH:mm:ss',
     merge_logs: true,
     autorestart: true,

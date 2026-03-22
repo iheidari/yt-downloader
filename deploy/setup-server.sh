@@ -39,10 +39,10 @@ sudo apt install -y caddy
 
 # Create directory structure
 echo "📁 Creating directory structure..."
-sudo mkdir -p /data/ytl
-sudo mkdir -p /data/ytl/logs
-sudo mkdir -p /data/ytl/backend/downloads
-sudo chown -R $USER:$USER /data/ytl
+sudo mkdir -p /data/ytd
+sudo mkdir -p /data/ytd/logs
+sudo mkdir -p /data/ytd/backend/downloads
+sudo chown -R $USER:$USER /data/ytd
 
 # Setup PM2 to start on boot
 echo "🔧 Configuring PM2 startup..."
