@@ -40,7 +40,7 @@ jobs:
       - name: Deploy to server
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ssh.heidari.ca
+          host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22222
@@ -64,7 +64,7 @@ jobs:
       - name: Copy files to server
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ssh.heidari.ca
+          host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22222
@@ -75,7 +75,7 @@ jobs:
       - name: Finalize deployment
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ssh.heidari.ca
+          host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22222
