@@ -1,0 +1,104 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual deployment'
+        required: false
+        default: 'Manual trigger'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: npm ci
+      
+      - name: Install and build frontend
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npm run build
+      
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
+          script: |
+            echo "🚀 Starting deployment to ytd.heidari.ca..."
+            
+            # Create necessary directories
+            mkdir -p /data/ytl/logs
+            mkdir -p /data/ytl/backend/downloads
+            
+            # Backup ecosystem config if it exists
+            if [ -f /data/ytl/deploy/ecosystem.config.js ]; then
+              cp /data/ytl/deploy/ecosystem.config.js /tmp/ecosystem.config.js.backup
+            fi
+            
+            # Remove old deployment (preserving downloads and logs)
+            cd /data/ytl
+            rm -rf backend/src backend/package*.json frontend node_modules deploy 2>/dev/null || true
+      
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "backend,frontend/dist,deploy"
+          target: "/data/ytl"
+          strip_components: 0
+      
+      - name: Finalize deployment
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /data/ytl
+            
+            echo "📦 Installing production dependencies..."
+            cd backend
+            npm ci --production
+            cd ..
+            
+            echo "🔄 Starting PM2..."
+            pm2 startOrRestart deploy/ecosystem.config.js --env production
+            pm2 save
+            
+            echo "🔧 Configuring Caddy..."
+            sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
+            sudo systemctl reload caddy
+            
+            # Verify deployment
+            echo ""
+            echo "✅ Deployment complete!"
+            echo ""
+            echo "🌐 Your app is live at: https://ytd.heidari.ca"
+            echo ""
+            echo "Status check:"
+            pm2 status
+            echo ""
+            sudo systemctl is-active caddy && echo "✅ Caddy is running" || echo "❌ Caddy is not running"
