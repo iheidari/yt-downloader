@@ -48,6 +48,10 @@ jobs:
           script: |
             echo "🚀 Starting deployment to ytd.heidari.ca..."
             
+            # Ensure directory ownership (run once, might need sudo)
+            sudo mkdir -p /data/ytd
+            sudo chown -R $USER:$USER /data/ytd
+            
             # Create necessary directories
             mkdir -p /data/ytd/logs
             mkdir -p /data/ytd/backend/downloads
