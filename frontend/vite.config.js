@@ -12,10 +12,16 @@ export default defineConfig({
     target: 'es2020',  // Modern browser support
     rollupOptions: {
       output: {
-        manualChunks: {
+        manualChunks: (id) => {
           // Code splitting for better caching
-          vendor: ['react', 'react-dom', 'axios'],
-          icons: ['lucide-react']
+          if (id.includes('node_modules')) {
+            if (id.includes('react') || id.includes('axios')) {
+              return 'vendor'
+            }
+            if (id.includes('lucide-react')) {
+              return 'icons'
+            }
+          }
         },
         // Asset naming for cache busting
         entryFileNames: 'assets/[name]-[hash].js',
