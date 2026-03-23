@@ -73,6 +73,14 @@ else
     print_status "Caddy is already installed"
 fi
 
+# Step 3.5: Create log directory for Caddy
+echo ""
+echo "📦 Step 3.5: Creating log directory..."
+sudo mkdir -p /var/log/caddy
+sudo chown caddy:caddy /var/log/caddy
+sudo chmod 755 /var/log/caddy
+print_status "Log directory created at /var/log/caddy"
+
 # Step 4: Create the main Caddyfile
 echo ""
 echo "📦 Step 4: Creating Caddyfile configuration..."
@@ -108,7 +116,7 @@ CADDYFILE_CONTENT='ytd.heidari.ca {
     
     # Logging
     log {
-        output file /data/ytd/logs/caddy-access-ytd.log
+        output file /var/log/caddy/ytd-access.log
         format json
     }
 }
@@ -125,7 +133,7 @@ cloud.heidari.ca {
     
     # Logging
     log {
-        output file /data/ytd/logs/caddy-access-cloud.log
+        output file /var/log/caddy/cloud-access.log
         format json
     }
 }
