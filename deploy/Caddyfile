@@ -36,10 +36,4 @@ ytd.heidari.ca {
     
     # Gzip compression
     encode gzip
-    
-    # Logging
-    log {
-        output file /data/ytd/logs/caddy-access.log
-        format json
-    }
 }

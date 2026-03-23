@@ -114,11 +114,6 @@ CADDYFILE_CONTENT='ytd.heidari.ca {
     # Gzip compression
     encode gzip
     
-    # Logging
-    log {
-        output file /var/log/caddy/ytd-access.log
-        format json
-    }
 }
 
 cloud.heidari.ca {
@@ -131,11 +126,6 @@ cloud.heidari.ca {
         header_up Connection {http_connection}
     }
     
-    # Logging
-    log {
-        output file /var/log/caddy/cloud-access.log
-        format json
-    }
 }
 '
 
