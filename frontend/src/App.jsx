@@ -177,6 +177,11 @@ function App() {
       eventSource.onmessage = (event) => {
         const eventData = JSON.parse(event.data)
         
+        // Ignore ping messages (heartbeat to keep connection alive)
+        if (eventData.type === 'ping') {
+          return
+        }
+        
         if (eventData.type === 'progress') {
           setDownloadProgress(eventData.progress)
         } else if (eventData.type === 'complete') {

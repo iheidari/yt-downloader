@@ -49,6 +49,11 @@ router.get('/progress/:downloadId', async (req, res) => {
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
 
+  // Heartbeat to prevent proxy timeout (every 15 seconds)
+  const heartbeatInterval = setInterval(() => {
+    sendEvent({ type: 'ping', downloadId, progress });
+  }, 15000);
+
   try {
     sendEvent({ type: 'started', downloadId, progress: 0 });
 
@@ -94,9 +99,11 @@ router.get('/progress/:downloadId', async (req, res) => {
       }
     });
 
+    clearInterval(heartbeatInterval);
     res.end();
   } catch (error) {
     console.error('Download error:', error);
+    clearInterval(heartbeatInterval);
     sendEvent({
       type: 'error',
       downloadId,

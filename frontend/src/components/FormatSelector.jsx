@@ -24,33 +24,52 @@ function FormatSelector({ info, onDownload, onCancel }) {
     }
   }
 
-  // Remove duplicate resolutions and prefer higher quality formats
+  // Remove duplicate resolutions and prefer compatible codecs (avc/h264 > vp9 > others)
   const getUniqueResolutions = (formats) => {
-    const seen = new Map()
-    return formats.filter(format => {
-      const res = format.resolution
-      if (!res || res === 'audio only') return false
+    const resolutionMap = new Map()
+    
+    // Sort by preference: h264/avc first, then by quality
+    const sortedFormats = [...formats].sort((a, b) => {
+      // Prefer h264/avc for compatibility
+      const aIsH264 = (a.vcodec || '').toLowerCase().includes('avc') || (a.vcodec || '').toLowerCase().includes('h264')
+      const bIsH264 = (b.vcodec || '').toLowerCase().includes('avc') || (b.vcodec || '').toLowerCase().includes('h264')
       
-      // Keep the first (usually best) format for each resolution
-      if (!seen.has(res)) {
-        seen.set(res, true)
-        return true
-      }
-      return false
+      if (aIsH264 && !bIsH264) return -1
+      if (!aIsH264 && bIsH264) return 1
+      
+      // Then by height
+      return getHeight(b.resolution) - getHeight(a.resolution)
     })
+    
+    sortedFormats.forEach(format => {
+      const res = format.resolution
+      if (!res || res === 'audio only') return
+      
+      // Keep only the first (best codec) format for each resolution
+      if (!resolutionMap.has(res)) {
+        resolutionMap.set(res, format)
+      }
+    })
+    
+    return Array.from(resolutionMap.values())
   }
 
-  // Filter and sort video formats by quality (highest first)
-  const uniqueVideoFormats = info.formats.video
-    ? getUniqueResolutions([...info.formats.video].sort((a, b) => {
-        // Extract height from resolution (e.g., "1920x1080" -> 1080)
-        const getHeight = (res) => {
-          const match = res.match(/(\d+)x(\d+)/)
-          return match ? parseInt(match[2]) : 0
-        }
-        return getHeight(b.resolution) - getHeight(a.resolution)
-      }))
-    : []
+  // Extract height from resolution (e.g., "1920x1080" -> 1080)
+  const getHeight = (res) => {
+    if (!res) return 0
+    const match = res.match(/(\d+)x(\d+)/)
+    return match ? parseInt(match[2]) : 0
+  }
+
+  // Get unique video formats grouped by resolution
+  const videoFormats = info.formats?.video || []
+  const uniqueVideoFormats = getUniqueResolutions(videoFormats)
+  
+  // Get combined (pre-merged) formats
+  const combinedFormats = info.formats?.combined || []
+  
+  // Get audio formats
+  const audioFormats = info.formats?.audio || []
 
   return (
     <div className="format-selector">
@@ -103,11 +122,11 @@ function FormatSelector({ info, onDownload, onCancel }) {
       )}
 
       {/* Pre-merged formats (lower quality but ready to use) */}
-      {info.formats.combined.length > 0 && (
+      {combinedFormats.length > 0 && (
         <div className="format-section">
           <h3><Monitor size={18} style={{ marginRight: 8 }} /> Ready to Use (Pre-merged)</h3>
           <div className="format-list">
-            {info.formats.combined.map((format) => (
+            {combinedFormats.map((format) => (
               <label key={format.formatId} className="format-option">
                 <input
                   type="radio"
@@ -130,11 +149,11 @@ function FormatSelector({ info, onDownload, onCancel }) {
         </div>
       )}
 
-      {info.formats.audio.length > 0 && (
+      {audioFormats.length > 0 && (
         <div className="format-section">
           <h3><Music size={18} style={{ marginRight: 8 }} /> Audio Only (Original Format)</h3>
           <div className="format-list">
-            {info.formats.audio.map((format) => (
+            {audioFormats.map((format) => (
               <label key={format.formatId} className="format-option">
                 <input
                   type="radio"
