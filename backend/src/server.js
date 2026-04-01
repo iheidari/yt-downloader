@@ -20,11 +20,15 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false // Allow embedding media
 }));
 
+// Configure CORS - allow same-origin requests and configured FRONTEND_URL
+const corsOrigin = process.env.FRONTEND_URL || false; // false = allow same-origin only
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: corsOrigin,
   methods: ['GET', 'POST', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Range'],
-  exposedHeaders: ['Content-Range', 'Content-Length', 'Accept-Ranges']
+  exposedHeaders: ['Content-Range', 'Content-Length', 'Accept-Ranges'],
+  credentials: true
 }));
 
 app.use(morgan('dev'));

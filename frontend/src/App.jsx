@@ -6,7 +6,8 @@ import VideoPlayer from './components/VideoPlayer'
 import DownloadHistory from './components/DownloadHistory'
 import './App.css'
 
-const API_URL = 'http://localhost:3001'
+// Use environment variable for API URL, fallback to same origin for production
+const API_URL = import.meta.env.VITE_API_URL || window.location.origin
 const STORAGE_KEY = 'ytDownloaderHistory'
 
 function App() {
