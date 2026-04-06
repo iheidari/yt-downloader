@@ -11,8 +11,7 @@ module.exports = {
     env_production: {
       NODE_ENV: 'production',
       PORT: 3001,
-      FRONTEND_URL: 'https://ytd.heidari.ca',
-      PATH: `${process.env.HOME}/.local/bin:${process.env.PATH}`
+      FRONTEND_URL: 'https://ytd.heidari.ca'
     },
     error_file: '/data/ytd/logs/api-error.log',
     out_file: '/data/ytd/logs/api-out.log',
