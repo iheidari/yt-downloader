@@ -50,12 +50,16 @@ async function getVideoInfo(url) {
     const { stdout } = await runYtDlp([
       '--dump-json',
       '--no-download',
-      '--extractor-args', 'youtube:player_client=ios,web',
       url
     ]);
 
     const info = JSON.parse(stdout);
-    
+
+    console.log(`📊 yt-dlp returned ${info.formats.length} total formats for: ${info.title}`);
+    console.log(`   Video-only: ${info.formats.filter(f => f.vcodec !== 'none' && f.acodec === 'none').length}`);
+    console.log(`   Audio-only: ${info.formats.filter(f => f.acodec !== 'none' && f.vcodec === 'none').length}`);
+    console.log(`   Combined: ${info.formats.filter(f => f.vcodec !== 'none' && f.acodec !== 'none').length}`);
+
     const videoFormats = info.formats
       .filter(f => f.vcodec !== 'none' && f.acodec === 'none')
       .map(f => ({
@@ -148,8 +152,7 @@ async function downloadVideo(url, formatId, downloadId, onProgress, mergeWithAud
       '-o', outputTemplate,
       '--newline',
       '--progress',
-      '--no-playlist',
-      '--extractor-args', 'youtube:player_client=ios,web'
+      '--no-playlist'
     ];
 
     // Add merge output format for video+audio combinations
@@ -213,7 +216,6 @@ async function downloadAudio(url, formatId, downloadId, onProgress) {
       '--newline',
       '--progress',
       '--no-playlist',
-      '--extractor-args', 'youtube:player_client=ios,web',
       url
     ], {
       onProgress: (line) => {
