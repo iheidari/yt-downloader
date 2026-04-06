@@ -83,8 +83,10 @@ jobs:
             cd /data/ytd
 
             echo "📦 Updating yt-dlp..."
-            curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-            chmod a+rx /usr/local/bin/yt-dlp
+            mkdir -p ~/.local/bin
+            curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ~/.local/bin/yt-dlp
+            chmod a+rx ~/.local/bin/yt-dlp
+            export PATH="$HOME/.local/bin:$PATH"
             echo "yt-dlp version: $(yt-dlp --version)"
 
             echo "📦 Installing production dependencies..."
