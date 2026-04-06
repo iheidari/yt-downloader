@@ -84,7 +84,7 @@ jobs:
 
             echo "📦 Updating yt-dlp..."
             export PATH="$HOME/.local/bin:$PATH"
-            pipx install yt-dlp --force 2>/dev/null || pipx upgrade yt-dlp 2>/dev/null || true
+            pipx install "yt-dlp[default]" --force 2>/dev/null || pipx upgrade yt-dlp 2>/dev/null || true
             echo "yt-dlp version: $(yt-dlp --version)"
 
             echo "📦 Installing production dependencies..."
