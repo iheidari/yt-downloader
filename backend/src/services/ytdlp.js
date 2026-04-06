@@ -168,8 +168,7 @@ async function downloadVideo(url, formatId, downloadId, onProgress, mergeWithAud
       '-o', outputTemplate,
       '--newline',
       '--progress',
-      '--no-playlist',
-      '--extractor-args', 'youtube:player_client=ios,web'
+      '--no-playlist'
     ];
 
     // Add merge output format for video+audio combinations
@@ -233,7 +232,6 @@ async function downloadAudio(url, formatId, downloadId, onProgress) {
       '--newline',
       '--progress',
       '--no-playlist',
-      '--extractor-args', 'youtube:player_client=ios,web',
       url
     ], {
       onProgress: (line) => {
