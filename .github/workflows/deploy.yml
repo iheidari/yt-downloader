@@ -83,10 +83,8 @@ jobs:
             cd /data/ytd
 
             echo "📦 Updating yt-dlp..."
-            mkdir -p ~/.local/bin
-            curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ~/.local/bin/yt-dlp
-            chmod a+rx ~/.local/bin/yt-dlp
             export PATH="$HOME/.local/bin:$PATH"
+            pipx install yt-dlp --force 2>/dev/null || pipx upgrade yt-dlp 2>/dev/null || true
             echo "yt-dlp version: $(yt-dlp --version)"
 
             echo "📦 Installing production dependencies..."
