@@ -5,10 +5,20 @@ const { v4: uuidv4 } = require('uuid');
 
 const downloadsDir = path.join(__dirname, '../../downloads');
 
+// Ensure yt-dlp can find Node.js (needed for YouTube SABR challenge solving)
+// and the updated binary in ~/.local/bin
+const homeBin = path.join(process.env.HOME || '', '.local', 'bin');
+const nodeDir = path.dirname(process.execPath);
+const ytDlpEnv = {
+  ...process.env,
+  PATH: [homeBin, nodeDir, process.env.PATH].filter(Boolean).join(':')
+};
+
 function runYtDlp(args, options = {}) {
   return new Promise((resolve, reject) => {
     const ytDlp = spawn('yt-dlp', args, {
       timeout: options.timeout || 120000,
+      env: ytDlpEnv,
       ...options.spawnOptions
     });
 
