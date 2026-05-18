@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Play,
@@ -9,9 +10,25 @@ import {
   ExternalLink,
   FileAudio,
   FileVideo,
+  Share2,
+  Check,
 } from "lucide-react";
 
 function DownloadHistory({ downloads, apiUrl, onDelete }) {
+  const [copiedId, setCopiedId] = useState(null);
+
+  const handleShare = async (downloadId) => {
+    const shareUrl = `${window.location.origin}/play/${downloadId}`;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopiedId(downloadId);
+      setTimeout(() => {
+        setCopiedId((current) => (current === downloadId ? null : current));
+      }, 2000);
+    } catch (err) {
+      console.error("❌ Share copy failed:", err);
+    }
+  };
   const formatFileSize = (bytes) => {
     if (!bytes) return "Unknown";
     const sizes = ["B", "KB", "MB", "GB"];
@@ -198,6 +215,18 @@ function DownloadHistory({ downloads, apiUrl, onDelete }) {
                 >
                   <Play size={14} />
                 </Link>
+
+                <button
+                  onClick={() => handleShare(download.downloadId)}
+                  className="action-btn secondary"
+                  title={copiedId === download.downloadId ? "Copied!" : "Share play link"}
+                >
+                  {copiedId === download.downloadId ? (
+                    <Check size={14} />
+                  ) : (
+                    <Share2 size={14} />
+                  )}
+                </button>
 
                 <a
                   href={downloadUrl}
