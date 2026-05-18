@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Download, X, Music, Monitor, Video } from 'lucide-react'
 
-function FormatSelector({ info, onDownload, onCancel }) {
+function FormatSelector({ info, onDownload, onCancel, disabled = false }) {
   const [selectedFormat, setSelectedFormat] = useState(null)
   const [formatType, setFormatType] = useState('combined')
 
@@ -177,17 +177,17 @@ function FormatSelector({ info, onDownload, onCancel }) {
       )}
 
       <div className="actions">
-        <button onClick={onCancel} className="cancel-btn">
+        <button onClick={onCancel} className="cancel-btn" disabled={disabled}>
           <X size={18} style={{ marginRight: 8 }} />
           Cancel
         </button>
-        <button 
-          onClick={handleDownload} 
+        <button
+          onClick={handleDownload}
           className="download-btn"
-          disabled={!selectedFormat}
+          disabled={!selectedFormat || disabled}
         >
           <Download size={18} style={{ marginRight: 8 }} />
-          Download
+          {disabled ? 'Starting…' : 'Download'}
         </button>
       </div>
     </div>

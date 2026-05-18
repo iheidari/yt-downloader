@@ -1,4 +1,4 @@
-function ProgressBar({ progress, downloadId }) {
+function ProgressBar({ progress }) {
   return (
     <div className="progress-container">
       <h2>Downloading...</h2>

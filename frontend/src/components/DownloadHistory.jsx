@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import {
   Play,
   Download,
@@ -8,10 +9,9 @@ import {
   ExternalLink,
   FileAudio,
   FileVideo,
-  RefreshCw,
 } from "lucide-react";
 
-function DownloadHistory({ downloads, apiUrl, onDelete, onPlay }) {
+function DownloadHistory({ downloads, apiUrl, onDelete }) {
   const formatFileSize = (bytes) => {
     if (!bytes) return "Unknown";
     const sizes = ["B", "KB", "MB", "GB"];
@@ -35,12 +35,10 @@ function DownloadHistory({ downloads, apiUrl, onDelete, onPlay }) {
   };
 
   const getFileType = (download) => {
-    // Check explicit type first, then fall back to filename extension
     if (download.type === "audio") return "audio";
     if (download.type === "video" || download.type === "combined")
       return "video";
 
-    // Fallback to filename extension check
     const isAudioFile = download.filename.match(
       /\.(mp3|m4a|ogg|opus|wav|flac)$/i,
     );
@@ -64,26 +62,12 @@ function DownloadHistory({ downloads, apiUrl, onDelete, onPlay }) {
       <div className="history-list">
         {downloads.map((download) => {
           const hoursLeft = getTimeRemaining(download.createdAt);
-          const isExpired = hoursLeft === 0;
           const fileType = getFileType(download);
           const isAudio = fileType === "audio";
           const downloadUrl = `${apiUrl}/api/files/${download.downloadId}/${encodeURIComponent(download.filename)}?action=download`;
 
-  const handleRedownload = (download) => {
-    // Navigate to main download page with the URL pre-filled
-    if (download.url) {
-      // Store the URL in localStorage so the main component can pick it up
-      localStorage.setItem('redownloadUrl', download.url);
-      // Refresh the page to trigger a new download flow
-      window.location.reload();
-    }
-  };
-
-  return (
-            <div
-              key={download.downloadId}
-              className={`history-item ${isExpired ? "expired" : ""}`}
-            >
+          return (
+            <div key={download.downloadId} className="history-item">
               {download.thumbnail ? (
                 <div style={{ position: "relative" }}>
                   <img
@@ -91,7 +75,6 @@ function DownloadHistory({ downloads, apiUrl, onDelete, onPlay }) {
                     alt={download.title}
                     className="history-thumb"
                   />
-                  {/* File type badge */}
                   <div
                     style={{
                       position: "absolute",
@@ -132,7 +115,6 @@ function DownloadHistory({ downloads, apiUrl, onDelete, onPlay }) {
                   ) : (
                     <Video size={24} color="#999" />
                   )}
-                  {/* File type badge */}
                   <div
                     style={{
                       position: "absolute",
@@ -160,7 +142,6 @@ function DownloadHistory({ downloads, apiUrl, onDelete, onPlay }) {
                   {formatFileSize(download.size)} •{" "}
                   {formatDate(download.createdAt)}
                 </p>
-                {/* File type indicator */}
                 <p
                   style={{
                     color: isAudio ? "#f59e0b" : "#3b82f6",
@@ -176,7 +157,7 @@ function DownloadHistory({ downloads, apiUrl, onDelete, onPlay }) {
                 </p>
                 <p
                   style={{
-                    color: isExpired ? "#dc2626" : hoursLeft < 4 ? "#f59e0b" : "#667eea",
+                    color: hoursLeft < 4 ? "#f59e0b" : "#667eea",
                     fontSize: "0.8rem",
                     marginTop: 2,
                     display: "flex",
@@ -185,9 +166,8 @@ function DownloadHistory({ downloads, apiUrl, onDelete, onPlay }) {
                   }}
                 >
                   <Clock size={12} />
-                  {isExpired ? "File expired - server cleaned up" : `${hoursLeft}h remaining`}
+                  {`${hoursLeft}h remaining`}
                 </p>
-                {/* Original URL link - always visible */}
                 {download.url && (
                   <a
                     href={download.url}
@@ -211,37 +191,22 @@ function DownloadHistory({ downloads, apiUrl, onDelete, onPlay }) {
               </div>
 
               <div className="history-actions">
-                {!isExpired ? (
-                  <>
-                    <button
-                      onClick={() => onPlay(download)}
-                      className="action-btn primary"
-                      title="Play"
-                    >
-                      <Play size={14} />
-                    </button>
+                <Link
+                  to={`/play/${download.downloadId}`}
+                  className="action-btn primary"
+                  title="Play"
+                >
+                  <Play size={14} />
+                </Link>
 
-                    <a
-                      href={downloadUrl}
-                      download={download.filename}
-                      className="action-btn secondary"
-                      title="Download"
-                    >
-                      <Download size={14} />
-                    </a>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => handleRedownload(download)}
-                      className="action-btn primary"
-                      title="Re-download"
-                      disabled={!download.url}
-                    >
-                      <RefreshCw size={14} />
-                    </button>
-                  </>
-                )}
+                <a
+                  href={downloadUrl}
+                  download={download.filename}
+                  className="action-btn secondary"
+                  title="Download"
+                >
+                  <Download size={14} />
+                </a>
 
                 {download.url && (
                   <a

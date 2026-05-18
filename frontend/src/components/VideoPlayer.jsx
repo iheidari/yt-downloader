@@ -1,7 +1,7 @@
-import { Play, Download, Plus } from 'lucide-react'
+import { Play, Download } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
-function VideoPlayer({ download, apiUrl, onReset }) {
+function VideoPlayer({ download, apiUrl }) {
   const [loadError, setLoadError] = useState(false)
   const [isReady, setIsReady] = useState(false)
 
@@ -22,12 +22,6 @@ function VideoPlayer({ download, apiUrl, onReset }) {
   const encodedFilename = encodeURIComponent(download.filename)
   const streamUrl = `${apiUrl}/api/files/${download.downloadId}/${encodedFilename}`
   const downloadUrl = `${apiUrl}/api/files/${download.downloadId}/${encodedFilename}?action=download`
-
-  useEffect(() => {
-    // Reset states when download changes
-    setLoadError(false)
-    setIsReady(false)
-  }, [download.downloadId])
 
   // Try to check if file exists by making a HEAD request
   useEffect(() => {
@@ -132,7 +126,7 @@ function VideoPlayer({ download, apiUrl, onReset }) {
           Open in New Tab
         </a>
         
-        <a 
+        <a
           href={downloadUrl}
           download={download.filename}
           className="action-btn secondary"
@@ -140,14 +134,6 @@ function VideoPlayer({ download, apiUrl, onReset }) {
           <Download size={18} />
           Download File
         </a>
-        
-        <button 
-          onClick={onReset}
-          className="action-btn secondary"
-        >
-          <Plus size={18} />
-          Download Another
-        </button>
       </div>
     </div>
   )
