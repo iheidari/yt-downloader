@@ -31,22 +31,22 @@ function listDownloads() {
 
   for (const dir of dirs) {
     const dirPath = path.join(downloadsDir, dir);
-    if (fs.statSync(dirPath).isDirectory()) {
-      const metadata = getDownloadMetadata(dir);
-      const files = fs.readdirSync(dirPath).filter(f => f !== METADATA_FILE);
-      
-      if (files.length > 0) {
-        downloads.push({
-          downloadId: dir,
-          ...metadata,
-          files,
-          path: dirPath
-        });
-      }
-    }
+    if (!fs.statSync(dirPath).isDirectory()) continue;
+
+    const metadata = getDownloadMetadata(dir);
+    if (!metadata) continue;
+
+    const files = fs.readdirSync(dirPath).filter(f => f !== METADATA_FILE);
+    downloads.push({
+      downloadId: dir,
+      ...metadata,
+      files,
+      expired: files.length === 0,
+      path: dirPath
+    });
   }
 
-  return downloads.sort((a, b) => 
+  return downloads.sort((a, b) =>
     new Date(b.createdAt) - new Date(a.createdAt)
   );
 }
@@ -68,35 +68,61 @@ function deleteDownload(downloadId) {
   return false;
 }
 
+function expireDownload(downloadId) {
+  const dirPath = path.join(downloadsDir, downloadId);
+  if (!fs.existsSync(dirPath)) return false;
+
+  const files = fs.readdirSync(dirPath).filter(f => f !== METADATA_FILE);
+  for (const file of files) {
+    fs.rmSync(path.join(dirPath, file), { force: true, recursive: true });
+  }
+
+  const metadata = getDownloadMetadata(downloadId);
+  if (metadata) {
+    metadata.expiredAt = new Date().toISOString();
+    saveDownloadMetadata(downloadId, metadata);
+  }
+  return true;
+}
+
 function cleanupOldDownloads(maxAgeHours = 24) {
   if (!fs.existsSync(downloadsDir)) {
-    return { deleted: 0, errors: [] };
+    return { expired: 0, expiredIds: [], errors: [] };
   }
 
   const now = Date.now();
   const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
-  const deleted = [];
+  const expiredIds = [];
   const errors = [];
 
   const dirs = fs.readdirSync(downloadsDir);
-  
+
   for (const dir of dirs) {
     const dirPath = path.join(downloadsDir, dir);
-    
+
     try {
       const stats = fs.statSync(dirPath);
-      const age = now - stats.mtimeMs;
-      
+      if (!stats.isDirectory()) continue;
+
+      const files = fs.readdirSync(dirPath).filter(f => f !== METADATA_FILE);
+      if (files.length === 0) continue;
+
+      const metadata = getDownloadMetadata(dir);
+      const createdAtMs = metadata?.createdAt
+        ? new Date(metadata.createdAt).getTime()
+        : stats.mtimeMs;
+      const age = now - createdAtMs;
+
       if (age > maxAgeMs) {
-        fs.rmSync(dirPath, { recursive: true, force: true });
-        deleted.push(dir);
+        expireDownload(dir);
+        expiredIds.push(dir);
       }
     } catch (err) {
       errors.push({ dir, error: err.message });
     }
   }
 
-  return { deleted: deleted.length, deletedIds: deleted, errors };
+  return { expired: expiredIds.length, expiredIds, errors };
 }
 
 module.exports = {
@@ -106,5 +132,6 @@ module.exports = {
   listDownloads,
   getDownloadFilePath,
   deleteDownload,
+  expireDownload,
   cleanupOldDownloads
 };

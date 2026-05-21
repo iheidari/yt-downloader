@@ -55,26 +55,12 @@ export function HistoryProvider({ children }) {
         if (cancelled) return
         if (!data.success || !Array.isArray(data.data)) return
 
-        const serverDownloads = data.data.map(decorate)
-        const serverIds = new Set(serverDownloads.map(d => d.downloadId))
-        const local = historyRef.current
+        const sortByDate = (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+        const active = data.data.filter(d => !d.expired).map(decorate).sort(sortByDate)
+        const expiredFromServer = data.data.filter(d => d.expired).sort(sortByDate)
 
-        const stillAlive = local.filter(d => serverIds.has(d.downloadId))
-        const stalePrunable = local.filter(d => !serverIds.has(d.downloadId))
-
-        const aliveIds = new Set(stillAlive.map(d => d.downloadId))
-        const newFromServer = serverDownloads.filter(d => !aliveIds.has(d.downloadId))
-
-        const merged = [...newFromServer, ...stillAlive]
-          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-
-        setHistory(merged)
-        setExpired(prev => {
-          const seenIds = new Set([...prev.map(d => d.downloadId), ...serverIds])
-          const newlyExpired = stalePrunable.filter(d => !seenIds.has(d.downloadId))
-          return [...newlyExpired, ...prev]
-            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-        })
+        setHistory(active)
+        setExpired(expiredFromServer)
       } catch (err) {
         console.error('❌ Server sync error:', err)
       }
@@ -100,13 +86,26 @@ export function HistoryProvider({ children }) {
     try {
       await fetch(`${HISTORY_API_URL}/api/files/${downloadId}`, { method: 'DELETE' })
     } catch (err) {
-      console.error('❌ Delete error:', err)
+      console.error('❌ Expire error:', err)
     }
+    const removed = historyRef.current.find(d => d.downloadId === downloadId)
     setHistory(prev => prev.filter(d => d.downloadId !== downloadId))
-    setExpired(prev => prev.filter(d => d.downloadId !== downloadId))
+    if (removed) {
+      setExpired(prev => {
+        const without = prev.filter(d => d.downloadId !== downloadId)
+        const entry = { ...removed, expired: true, expiredAt: new Date().toISOString() }
+        return [entry, ...without]
+          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      })
+    }
   }, [])
 
-  const forgetExpired = useCallback((downloadId) => {
+  const forgetExpired = useCallback(async (downloadId) => {
+    try {
+      await fetch(`${HISTORY_API_URL}/api/files/${downloadId}?permanent=true`, { method: 'DELETE' })
+    } catch (err) {
+      console.error('❌ Forget error:', err)
+    }
     setExpired(prev => prev.filter(d => d.downloadId !== downloadId))
   }, [])
 

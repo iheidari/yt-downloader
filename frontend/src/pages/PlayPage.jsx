@@ -19,7 +19,7 @@ function PlayPageContent({ downloadId }) {
         if (cancelled) return
         if (data.success && Array.isArray(data.data)) {
           const found = data.data.find(d => d.downloadId === downloadId)
-          if (found) {
+          if (found && !found.expired) {
             setColdResult({
               status: 'found',
               data: {
@@ -27,6 +27,10 @@ function PlayPageContent({ downloadId }) {
                 fileUrl: `${apiUrl}/api/files/${found.downloadId}/${encodeURIComponent(found.filename)}`
               }
             })
+            return
+          }
+          if (found && found.expired) {
+            setColdResult({ status: 'missing', data: found })
             return
           }
         }
@@ -44,22 +48,44 @@ function PlayPageContent({ downloadId }) {
   const resolved = fromContext || (coldResult.status === 'found' ? coldResult.data : null)
   const missing = !fromContext && coldResult.status === 'missing'
 
+  const backLink = (
+    <Link
+      to="/"
+      className="inline-flex items-center gap-1 text-secondary hover:text-primary font-label-md text-label-md mb-stack-md transition-colors"
+    >
+      <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+      Back
+    </Link>
+  )
+
   if (missing) {
     const stale = coldResult.data
     return (
-      <div className="status-card">
-        <h2>File not found</h2>
-        <p>This download may have expired (files are deleted after 24 hours).</p>
-        <div className="status-card-actions">
-          {stale?.url && (
+      <div className="max-w-4xl mx-auto">
+        {backLink}
+        <div className="bg-surface-container-lowest border border-surface-variant rounded-xl p-12 text-center">
+          <span className="material-symbols-outlined text-[48px] text-secondary mb-3 block">schedule</span>
+          <h2 className="font-headline-md text-headline-md text-on-surface mb-2">File not found</h2>
+          <p className="font-body-md text-body-md text-secondary mb-6">
+            This download may have expired (files are deleted after 24 hours).
+          </p>
+          <div className="flex items-center gap-3 justify-center flex-wrap">
+            {stale?.url && (
+              <Link
+                to={`/info?url=${encodeURIComponent(stale.url)}`}
+                className="bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-primary-container transition-colors inline-flex items-center gap-2"
+              >
+                <span className="material-symbols-outlined text-[18px]">refresh</span>
+                Re-download
+              </Link>
+            )}
             <Link
-              to={`/info?url=${encodeURIComponent(stale.url)}`}
-              className="action-btn primary"
+              to="/"
+              className="border border-outline-variant text-on-surface-variant px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container-high transition-colors inline-flex items-center gap-2"
             >
-              Re-download
+              Back to home
             </Link>
-          )}
-          <Link to="/" className="action-btn secondary">Back to home</Link>
+          </div>
         </div>
       </div>
     )
@@ -67,8 +93,14 @@ function PlayPageContent({ downloadId }) {
 
   if (!resolved) {
     return (
-      <div className="status-card">
-        <p className="loading">Loading…</p>
+      <div className="max-w-4xl mx-auto">
+        {backLink}
+        <div className="bg-surface-container-lowest border border-surface-variant rounded-xl p-12 text-center">
+          <span className="material-symbols-outlined animate-spin text-[40px] text-primary mb-3 block">
+            progress_activity
+          </span>
+          <p className="font-body-md text-body-md text-secondary">Loading…</p>
+        </div>
       </div>
     )
   }

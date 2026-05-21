@@ -31,17 +31,17 @@ function startCleanupScheduler() {
 function runCleanup() {
   console.log('🧹 Running cleanup...');
   const result = cleanupOldDownloads(MAX_FILE_AGE_HOURS);
-  
-  if (result.deleted > 0) {
-    console.log(`✅ Cleaned up ${result.deleted} old downloads: ${result.deletedIds.join(', ')}`);
+
+  if (result.expired > 0) {
+    console.log(`✅ Expired ${result.expired} old downloads: ${result.expiredIds.join(', ')}`);
   } else {
-    console.log('✅ No old downloads to clean up');
+    console.log('✅ No old downloads to expire');
   }
-  
+
   if (result.errors.length > 0) {
     console.error('⚠️ Cleanup errors:', result.errors);
   }
-  
+
   return result;
 }
 

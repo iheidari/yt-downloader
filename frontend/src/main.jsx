@@ -7,6 +7,7 @@ import { HistoryProvider } from './context/HistoryContext.jsx'
 import HomePage from './pages/HomePage.jsx'
 import InfoPage from './pages/InfoPage.jsx'
 import DownloadPage from './pages/DownloadPage.jsx'
+import DownloadsPage from './pages/DownloadsPage.jsx'
 import PlayPage from './pages/PlayPage.jsx'
 import NotFoundPage from './pages/NotFoundPage.jsx'
 
@@ -16,6 +17,7 @@ const router = createBrowserRouter([
     element: <App />,
     children: [
       { index: true, element: <HomePage /> },
+      { path: 'downloads', element: <DownloadsPage /> },
       { path: 'info', element: <InfoPage /> },
       { path: 'download/:downloadId', element: <DownloadPage /> },
       { path: 'play/:downloadId', element: <PlayPage /> },

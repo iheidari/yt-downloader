@@ -2,11 +2,12 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const fs = require('fs');
-const { 
-  listDownloads, 
-  getDownloadFilePath, 
+const {
+  listDownloads,
+  getDownloadFilePath,
   deleteDownload,
-  downloadsDir 
+  expireDownload,
+  downloadsDir
 } = require('../utils/storage');
 
 // RFC 5987 encoding for unicode filenames in Content-Disposition header
@@ -100,13 +101,14 @@ router.get('/:downloadId/:filename', (req, res) => {
 
 router.delete('/:downloadId', (req, res) => {
   const { downloadId } = req.params;
+  const permanent = req.query.permanent === 'true';
 
   try {
-    const deleted = deleteDownload(downloadId);
-    if (deleted) {
+    const ok = permanent ? deleteDownload(downloadId) : expireDownload(downloadId);
+    if (ok) {
       res.json({
         success: true,
-        message: 'Download deleted successfully'
+        message: permanent ? 'Download deleted permanently' : 'Download expired'
       });
     } else {
       res.status(404).json({

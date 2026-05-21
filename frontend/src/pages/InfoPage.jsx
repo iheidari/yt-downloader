@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams, Navigate } from 'react-router-dom'
+import { useNavigate, useSearchParams, Navigate, Link } from 'react-router-dom'
 import FormatSelector from '../components/FormatSelector'
 import { useHistory } from '../context/useHistory'
 
@@ -12,7 +12,7 @@ function InfoPage() {
   const [info, setInfo] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [starting, setStarting] = useState(false)
+  const [startingFormat, setStartingFormat] = useState(null)
 
   useEffect(() => {
     if (!url) return
@@ -42,7 +42,7 @@ function InfoPage() {
   if (!url) return <Navigate to="/" replace />
 
   const handleDownload = async (formatId, type) => {
-    setStarting(true)
+    setStartingFormat(formatId)
     setError(null)
     try {
       const response = await fetch(`${apiUrl}/api/download`, {
@@ -73,23 +73,48 @@ function InfoPage() {
       })
     } catch (err) {
       setError(err.message || 'Failed to start download')
-      setStarting(false)
+      setStartingFormat(null)
     }
   }
 
+  const backLink = (
+    <Link
+      to="/"
+      className="inline-flex items-center gap-1 text-secondary hover:text-primary font-label-md text-label-md mb-stack-md transition-colors"
+    >
+      <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+      Back
+    </Link>
+  )
+
   if (loading) {
     return (
-      <div className="status-card">
-        <p className="loading">Fetching video info…</p>
+      <div className="max-w-4xl mx-auto">
+        {backLink}
+        <div className="bg-surface-container-lowest border border-surface-variant rounded-xl p-12 text-center">
+          <span className="material-symbols-outlined animate-spin text-[40px] text-primary mb-3 block">
+            progress_activity
+          </span>
+          <p className="font-body-md text-body-md text-secondary">Fetching video info…</p>
+        </div>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="error">
-        <p>{error}</p>
-        <button onClick={() => navigate('/')}>Back to home</button>
+      <div className="max-w-4xl mx-auto">
+        {backLink}
+        <div className="bg-error-container border border-error rounded-xl p-6 text-center">
+          <span className="material-symbols-outlined text-[40px] text-error mb-2 block">error</span>
+          <p className="font-body-md text-body-md text-on-error-container mb-4">{error}</p>
+          <button
+            onClick={() => navigate('/')}
+            className="bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-primary-container transition-colors"
+          >
+            Back to home
+          </button>
+        </div>
       </div>
     )
   }
@@ -100,8 +125,7 @@ function InfoPage() {
     <FormatSelector
       info={info}
       onDownload={handleDownload}
-      onCancel={() => navigate('/')}
-      disabled={starting}
+      startingFormat={startingFormat}
     />
   )
 }
