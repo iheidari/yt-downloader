@@ -39,7 +39,7 @@ function formatRelative(dateString) {
   return `${years} year${years === 1 ? '' : 's'} ago`
 }
 
-function ActiveCard({ download, apiUrl, onDelete }) {
+function ActiveCard({ download, apiUrl, onDelete, onKeep }) {
   const [copied, setCopied] = useState(false)
   const isAudio = getFileType(download) === 'audio'
 
@@ -83,15 +83,34 @@ function ActiveCard({ download, apiUrl, onDelete }) {
         <div>
           <div className="flex justify-between items-start gap-2">
             <h3 className="font-headline-md text-headline-md text-on-surface truncate pr-4">{download.title}</h3>
-            <span className="flex items-center gap-1 text-tertiary font-label-sm text-label-sm whitespace-nowrap bg-tertiary-fixed px-2 py-0.5 rounded-full">
-              <span
-                className="material-symbols-outlined text-[14px]"
-                style={{ fontVariationSettings: "'FILL' 1" }}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={() => onKeep(download.downloadId, !download.kept)}
+                title={download.kept ? 'Kept — click to let it expire' : 'Keep this file from expiring'}
+                className={
+                  download.kept
+                    ? 'flex items-center gap-1 text-on-primary font-label-sm text-label-sm whitespace-nowrap bg-primary px-2 py-0.5 rounded-full transition-colors active:scale-95'
+                    : 'flex items-center gap-1 text-primary font-label-sm text-label-sm whitespace-nowrap border border-primary px-2 py-0.5 rounded-full hover:bg-primary/5 transition-colors active:scale-95'
+                }
               >
-                check_circle
+                <span
+                  className="material-symbols-outlined text-[14px]"
+                  style={download.kept ? { fontVariationSettings: "'FILL' 1" } : undefined}
+                >
+                  push_pin
+                </span>
+                {download.kept ? 'Kept' : 'Keep'}
+              </button>
+              <span className="flex items-center gap-1 text-tertiary font-label-sm text-label-sm whitespace-nowrap bg-tertiary-fixed px-2 py-0.5 rounded-full">
+                <span
+                  className="material-symbols-outlined text-[14px]"
+                  style={{ fontVariationSettings: "'FILL' 1" }}
+                >
+                  check_circle
+                </span>
+                Completed
               </span>
-              Completed
-            </span>
+            </div>
           </div>
           {download.url && (
             <a
@@ -246,7 +265,7 @@ function ExpiredCard({ download, onForget }) {
 }
 
 function DownloadsPage() {
-  const { history, expired, apiUrl, removeDownload, forgetExpired } = useHistory()
+  const { history, expired, apiUrl, removeDownload, forgetExpired, setKept } = useHistory()
   const [filter, setFilter] = useState('all')
 
   const items = useMemo(() => {
@@ -264,7 +283,7 @@ function DownloadsPage() {
         <div>
           <h2 className="font-headline-lg text-headline-lg text-on-surface mb-2">My Downloads</h2>
           <p className="font-body-md text-body-md text-on-surface-variant">
-            Manage your saved media. Files expire after 24 hours but can be re-downloaded from the source.
+            Manage your saved media. Files expire after 24 hours unless you keep them, and can be re-downloaded from the source.
           </p>
         </div>
         <div className="flex items-center gap-2 bg-surface-container-low p-1 rounded-lg">
@@ -298,7 +317,7 @@ function DownloadsPage() {
             item._expired ? (
               <ExpiredCard key={item.downloadId} download={item} onForget={forgetExpired} />
             ) : (
-              <ActiveCard key={item.downloadId} download={item} apiUrl={apiUrl} onDelete={removeDownload} />
+              <ActiveCard key={item.downloadId} download={item} apiUrl={apiUrl} onDelete={removeDownload} onKeep={setKept} />
             )
           )}
         </div>

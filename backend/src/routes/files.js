@@ -7,6 +7,7 @@ const {
   getDownloadFilePath,
   deleteDownload,
   expireDownload,
+  setKept,
   downloadsDir
 } = require('../utils/storage');
 
@@ -96,6 +97,31 @@ router.get('/:downloadId/:filename', (req, res) => {
     res.setHeader('Content-Length', stat.size);
     const stream = fs.createReadStream(filePath);
     stream.pipe(res);
+  }
+});
+
+router.patch('/:downloadId', (req, res) => {
+  const { downloadId } = req.params;
+  const kept = req.query.kept === 'true';
+
+  try {
+    const ok = setKept(downloadId, kept);
+    if (ok) {
+      res.json({
+        success: true,
+        data: { downloadId, kept }
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        error: 'Download not found'
+      });
+    }
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
   }
 });
 

@@ -41,7 +41,7 @@ function InfoPage() {
 
   if (!url) return <Navigate to="/" replace />
 
-  const handleDownload = async (formatId, type) => {
+  const handleDownload = async (formatId, type, keep) => {
     setStartingFormat(formatId)
     setError(null)
     try {
@@ -68,7 +68,8 @@ function InfoPage() {
           formatId,
           type,
           title: info.title,
-          thumbnail: info.thumbnail
+          thumbnail: info.thumbnail,
+          keep
         }
       })
     } catch (err) {

@@ -68,6 +68,14 @@ function deleteDownload(downloadId) {
   return false;
 }
 
+function setKept(downloadId, kept) {
+  const metadata = getDownloadMetadata(downloadId);
+  if (!metadata) return false;
+  metadata.kept = !!kept;
+  saveDownloadMetadata(downloadId, metadata);
+  return true;
+}
+
 function expireDownload(downloadId) {
   const dirPath = path.join(downloadsDir, downloadId);
   if (!fs.existsSync(dirPath)) return false;
@@ -108,6 +116,8 @@ function cleanupOldDownloads(maxAgeHours = 24) {
       if (files.length === 0) continue;
 
       const metadata = getDownloadMetadata(dir);
+      if (metadata?.kept) continue;
+
       const createdAtMs = metadata?.createdAt
         ? new Date(metadata.createdAt).getTime()
         : stats.mtimeMs;
@@ -133,5 +143,6 @@ module.exports = {
   getDownloadFilePath,
   deleteDownload,
   expireDownload,
+  setKept,
   cleanupOldDownloads
 };

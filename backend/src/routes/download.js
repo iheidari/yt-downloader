@@ -32,7 +32,7 @@ router.post('/', async (req, res) => {
 
 router.get('/progress/:downloadId', async (req, res) => {
   const { downloadId } = req.params;
-  const { url, formatId, type, title, thumbnail } = req.query;
+  const { url, formatId, type, title, thumbnail, keep } = req.query;
 
   if (!url || !formatId) {
     return res.status(400).json({
@@ -86,6 +86,7 @@ router.get('/progress/:downloadId', async (req, res) => {
       type: type || 'video',
       filename: result.filename,
       size: result.size,
+      kept: keep === 'true',
       createdAt: new Date().toISOString(),
       downloadId
     };

@@ -31,7 +31,8 @@ function DownloadPage() {
           formatId: startParams.formatId,
           type: startParams.type,
           title: startParams.title || '',
-          thumbnail: startParams.thumbnail || ''
+          thumbnail: startParams.thumbnail || '',
+          keep: startParams.keep ? 'true' : 'false'
         })
 
         eventSource = new EventSource(

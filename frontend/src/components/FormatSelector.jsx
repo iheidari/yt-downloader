@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
 function FormatSelector({ info, onDownload, startingFormat = null }) {
+  const [keep, setKeep] = useState(false)
   const formatFileSize = (bytes) => {
     if (!bytes) return 'Unknown'
     const sizes = ['B', 'KB', 'MB', 'GB']
@@ -142,6 +144,23 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
         </div>
       </section>
 
+      {/* Keep-forever toggle — applies to whichever format is downloaded next */}
+      <label className="mb-stack-md flex items-center gap-3 bg-surface-container-lowest border border-surface-variant rounded-xl p-4 cursor-pointer select-none hover:shadow-sm transition-shadow">
+        <input
+          type="checkbox"
+          checked={keep}
+          onChange={(e) => setKeep(e.target.checked)}
+          className="w-5 h-5 accent-primary flex-shrink-0"
+        />
+        <span className="material-symbols-outlined text-primary">push_pin</span>
+        <span className="min-w-0">
+          <span className="block font-label-md text-label-md text-on-surface">Keep forever</span>
+          <span className="block font-label-sm text-label-sm text-secondary">
+            Don't auto-delete this download after 24 hours.
+          </span>
+        </span>
+      </label>
+
       {/* Options Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-stack-md">
         {/* Video Options */}
@@ -184,7 +203,7 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
                       </div>
                     </div>
                     <button
-                      onClick={() => onDownload(format.formatId, format._type)}
+                      onClick={() => onDownload(format.formatId, format._type, keep)}
                       disabled={startingFormat !== null}
                       className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md text-label-md active:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
                     >
@@ -244,7 +263,7 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
                       </div>
                     </div>
                     <button
-                      onClick={() => onDownload(format.formatId, 'audio')}
+                      onClick={() => onDownload(format.formatId, 'audio', keep)}
                       disabled={startingFormat !== null}
                       className="flex items-center gap-2 border border-primary text-primary px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-primary/5 active:opacity-80 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
                     >
