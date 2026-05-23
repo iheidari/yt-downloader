@@ -177,18 +177,7 @@ function ActiveCard({ download, apiUrl, onDelete, onKeep }) {
 }
 
 function ExpiredCard({ download, onForget }) {
-  const [copied, setCopied] = useState(false)
   const isAudio = getFileType(download) === 'audio'
-
-  const handleShare = async () => {
-    try {
-      await navigator.clipboard.writeText(`${window.location.origin}/play/${download.downloadId}`)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch (err) {
-      console.error('❌ Share copy failed:', err)
-    }
-  }
 
   return (
     <div className="group bg-surface-container-low/50 border border-surface-variant/50 rounded-lg p-4 flex flex-col sm:flex-row gap-4 opacity-75 hover:opacity-100 transition-opacity">
@@ -244,15 +233,8 @@ function ExpiredCard({ download, onForget }) {
           )}
           <div className="flex items-center gap-1">
             <button
-              onClick={handleShare}
-              className="p-2 text-on-surface-variant/40 hover:text-primary hover:bg-surface-container-high transition-all rounded-full"
-              title={copied ? 'Copied!' : 'Share play link'}
-            >
-              <span className="material-symbols-outlined">{copied ? 'check' : 'share'}</span>
-            </button>
-            <button
               onClick={() => onForget(download.downloadId)}
-              className="p-2 text-on-surface-variant/40 hover:text-error hover:bg-error-container/20 transition-all rounded-full"
+              className="p-2 text-on-surface-variant hover:text-error hover:bg-error-container/20 transition-all rounded-full"
               title="Forget"
             >
               <span className="material-symbols-outlined">delete</span>
