@@ -100,6 +100,7 @@ function VideoPlayer({ download, apiUrl }) {
               </span>
               <audio
                 controls
+                autoPlay
                 src={streamUrl}
                 onError={() => setLoadError(true)}
                 onCanPlay={() => setLoadError(false)}
@@ -109,6 +110,7 @@ function VideoPlayer({ download, apiUrl }) {
           ) : (
             <video
               controls
+              autoPlay
               src={streamUrl}
               onError={() => setLoadError(true)}
               onCanPlay={() => setLoadError(false)}
