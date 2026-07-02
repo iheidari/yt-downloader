@@ -3,19 +3,14 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useHistory } from '../context/useHistory'
 import { usePlayer } from '../context/usePlayer'
 import PlayerStage from './PlayerStage'
+import BackLink from './BackLink'
+import { isAudioFile, formatFileSize, fileUrl } from '../lib/media'
 
 function VideoPlayer({ download, apiUrl }) {
   const navigate = useNavigate()
   const { removeDownload } = useHistory()
   const { closePlayer } = usePlayer()
   const [copied, setCopied] = useState(false)
-
-  const formatFileSize = (bytes) => {
-    if (!bytes) return 'Unknown'
-    const sizes = ['B', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(1024))
-    return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`
-  }
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString(undefined, {
@@ -25,11 +20,10 @@ function VideoPlayer({ download, apiUrl }) {
     })
   }
 
-  const isAudio = /\.(mp3|m4a|ogg|opus|wav|flac)$/i.test(download.filename)
+  const isAudio = isAudioFile(download.filename)
   const ext = (download.filename.match(/\.([a-z0-9]+)$/i)?.[1] || '').toUpperCase()
 
-  const encodedFilename = encodeURIComponent(download.filename)
-  const downloadUrl = `${apiUrl}/api/files/${download.downloadId}/${encodedFilename}?action=download`
+  const downloadUrl = fileUrl(apiUrl, download.downloadId, download.filename, { download: true })
 
   const handleShare = async () => {
     const shareUrl = `${window.location.origin}/play/${download.downloadId}`
@@ -51,13 +45,7 @@ function VideoPlayer({ download, apiUrl }) {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <Link
-        to="/"
-        className="inline-flex items-center gap-1 text-secondary hover:text-primary font-label-md text-label-md mb-stack-md transition-colors"
-      >
-        <span className="material-symbols-outlined text-[20px]">arrow_back</span>
-        Back
-      </Link>
+      <BackLink />
 
       <div className="space-y-stack-md">
         {/* Player area — hosts the shared, persistent media element. */}

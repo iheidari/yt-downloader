@@ -1,14 +1,9 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import BackLink from './BackLink'
+import { formatFileSize } from '../lib/media'
 
 function FormatSelector({ info, onDownload, startingFormat = null }) {
   const [keep, setKeep] = useState(false)
-  const formatFileSize = (bytes) => {
-    if (!bytes) return 'Unknown'
-    const sizes = ['B', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(1024))
-    return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`
-  }
 
   const formatDuration = (seconds) => {
     if (!seconds && seconds !== 0) return ''
@@ -47,8 +42,8 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
     const all = [...videoFormats, ...combinedFormats]
 
     const sorted = [...all].sort((a, b) => {
-      const aIsH264 = (a.vcodec || '').toLowerCase().match(/avc|h264/) !== null
-      const bIsH264 = (b.vcodec || '').toLowerCase().match(/avc|h264/) !== null
+      const aIsH264 = /avc|h264/i.test(a.vcodec || '')
+      const bIsH264 = /avc|h264/i.test(b.vcodec || '')
       if (aIsH264 && !bIsH264) return -1
       if (!aIsH264 && bIsH264) return 1
       return getHeight(b.resolution) - getHeight(a.resolution)
@@ -94,13 +89,7 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <Link
-        to="/"
-        className="inline-flex items-center gap-1 text-secondary hover:text-primary font-label-md text-label-md mb-stack-md transition-colors"
-      >
-        <span className="material-symbols-outlined text-[20px]">arrow_back</span>
-        Back
-      </Link>
+      <BackLink />
 
       {/* Video Header Section */}
       <section className="mb-stack-lg">

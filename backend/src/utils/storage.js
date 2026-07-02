@@ -22,23 +22,25 @@ function getDownloadMetadata(downloadId) {
 }
 
 function listDownloads() {
-  if (!fs.existsSync(downloadsDir)) {
+  let entries;
+  try {
+    entries = fs.readdirSync(downloadsDir, { withFileTypes: true });
+  } catch {
     return [];
   }
 
   const downloads = [];
-  const dirs = fs.readdirSync(downloadsDir);
 
-  for (const dir of dirs) {
-    const dirPath = path.join(downloadsDir, dir);
-    if (!fs.statSync(dirPath).isDirectory()) continue;
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
 
-    const metadata = getDownloadMetadata(dir);
+    const metadata = getDownloadMetadata(entry.name);
     if (!metadata) continue;
 
+    const dirPath = path.join(downloadsDir, entry.name);
     const files = fs.readdirSync(dirPath).filter(f => f !== METADATA_FILE);
     downloads.push({
-      downloadId: dir,
+      downloadId: entry.name,
       ...metadata,
       files,
       expired: files.length === 0,

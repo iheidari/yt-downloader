@@ -1,19 +1,16 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react'
 import { PlayerContext } from './playerContext.js'
-
-const AUDIO_RE = /\.(mp3|m4a|ogg|opus|wav|flac)$/i
+import { isAudioFile, fileUrl } from '../lib/media'
 
 // Build the player's view of a download. `download` comes from history/cold-lookup.
 function toTrack(download, apiUrl) {
-  const encoded = encodeURIComponent(download.filename)
-  const base = `${apiUrl}/api/files/${download.downloadId}/${encoded}`
   return {
     downloadId: download.downloadId,
     title: download.title,
     filename: download.filename,
-    isAudio: AUDIO_RE.test(download.filename),
-    streamUrl: base,
-    downloadUrl: `${base}?action=download`
+    isAudio: isAudioFile(download.filename),
+    streamUrl: fileUrl(apiUrl, download.downloadId, download.filename),
+    downloadUrl: fileUrl(apiUrl, download.downloadId, download.filename, { download: true })
   }
 }
 

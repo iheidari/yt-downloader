@@ -3,9 +3,9 @@ import {
   HistoryContext,
   HISTORY_API_URL,
   HISTORY_STORAGE_KEY,
-  EXPIRED_STORAGE_KEY,
-  HISTORY_EXPIRY_MS
+  EXPIRED_STORAGE_KEY
 } from './historyContext.js'
+import { fileUrl } from '../lib/media'
 
 function loadKey(key) {
   try {
@@ -20,7 +20,7 @@ function loadKey(key) {
 function decorate(d) {
   return {
     ...d,
-    fileUrl: `${HISTORY_API_URL}/api/files/${d.downloadId}/${encodeURIComponent(d.filename)}`
+    fileUrl: fileUrl(HISTORY_API_URL, d.downloadId, d.filename)
   }
 }
 
@@ -133,7 +133,6 @@ export function HistoryProvider({ children }) {
     history,
     expired,
     apiUrl: HISTORY_API_URL,
-    expiryMs: HISTORY_EXPIRY_MS,
     addDownload,
     removeDownload,
     forgetExpired,

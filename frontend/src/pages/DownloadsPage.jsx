@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useHistory } from '../context/useHistory'
+import { isAudioFile, formatFileSize, fileUrl } from '../lib/media'
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -11,14 +12,7 @@ const FILTERS = [
 function getFileType(d) {
   if (d.type === 'audio') return 'audio'
   if (d.type === 'video' || d.type === 'combined') return 'video'
-  return /\.(mp3|m4a|ogg|opus|wav|flac)$/i.test(d.filename || '') ? 'audio' : 'video'
-}
-
-function formatFileSize(bytes) {
-  if (!bytes) return 'Unknown size'
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
-  return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`
+  return isAudioFile(d.filename) ? 'audio' : 'video'
 }
 
 function formatRelative(dateString) {
@@ -53,7 +47,7 @@ function ActiveCard({ download, apiUrl, onDelete, onKeep }) {
     }
   }
 
-  const downloadHref = `${apiUrl}/api/files/${download.downloadId}/${encodeURIComponent(download.filename)}?action=download`
+  const downloadHref = fileUrl(apiUrl, download.downloadId, download.filename, { download: true })
 
   return (
     <div className="group bg-surface-container-lowest border border-surface-variant rounded-lg p-4 flex flex-col sm:flex-row gap-4 hover:shadow-md transition-shadow">

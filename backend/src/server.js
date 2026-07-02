@@ -9,6 +9,7 @@ const infoRoutes = require('./routes/info');
 const downloadRoutes = require('./routes/download');
 const filesRoutes = require('./routes/files');
 const { startCleanupScheduler } = require('./services/cleanup');
+const { downloadsDir } = require('./utils/storage');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -34,7 +35,6 @@ app.use(cors({
 app.use(morgan('dev'));
 app.use(express.json());
 
-const downloadsDir = path.join(__dirname, '../downloads');
 if (!fs.existsSync(downloadsDir)) {
   fs.mkdirSync(downloadsDir, { recursive: true });
 }

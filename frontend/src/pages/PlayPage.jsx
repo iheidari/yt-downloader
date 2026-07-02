@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import VideoPlayer from '../components/VideoPlayer'
+import BackLink from '../components/BackLink'
 import { useHistory } from '../context/useHistory'
 import { usePlayer } from '../context/usePlayer'
+import { fileUrl } from '../lib/media'
 
 function PlayPageContent({ downloadId }) {
   const { history, apiUrl, findById } = useHistory()
@@ -26,7 +28,7 @@ function PlayPageContent({ downloadId }) {
               status: 'found',
               data: {
                 ...found,
-                fileUrl: `${apiUrl}/api/files/${found.downloadId}/${encodeURIComponent(found.filename)}`
+                fileUrl: fileUrl(apiUrl, found.downloadId, found.filename)
               }
             })
             return
@@ -54,15 +56,7 @@ function PlayPageContent({ downloadId }) {
     if (resolved) playTrack(resolved, apiUrl)
   }, [resolved, apiUrl, playTrack])
 
-  const backLink = (
-    <Link
-      to="/"
-      className="inline-flex items-center gap-1 text-secondary hover:text-primary font-label-md text-label-md mb-stack-md transition-colors"
-    >
-      <span className="material-symbols-outlined text-[20px]">arrow_back</span>
-      Back
-    </Link>
-  )
+  const backLink = <BackLink />
 
   if (missing) {
     const stale = coldResult.data

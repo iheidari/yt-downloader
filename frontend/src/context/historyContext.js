@@ -7,5 +7,3 @@ export const HISTORY_API_URL =
 
 export const HISTORY_STORAGE_KEY = 'ytDownloaderHistory'
 export const EXPIRED_STORAGE_KEY = 'ytDownloaderExpired'
-
-export const HISTORY_EXPIRY_MS = 24 * 60 * 60 * 1000

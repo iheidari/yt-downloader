@@ -1,10 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
-const { downloadVideo, downloadAudio, downloadSubtitle } = require('../services/ytdlp');
+const { downloadVideo, downloadAudio } = require('../services/ytdlp');
 const { saveDownloadMetadata } = require('../utils/storage');
-
-const activeDownloads = new Map();
 
 router.post('/', async (req, res) => {
   const { url, formatId, type, title, thumbnail } = req.body;
