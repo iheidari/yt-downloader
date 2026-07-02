@@ -44,3 +44,35 @@ export function fileUrl(apiUrl, downloadId, filename, { download = false } = {})
   const base = `${apiUrl}/api/files/${downloadId}/${encodeURIComponent(filename)}`
   return download ? `${base}?action=download` : base
 }
+
+// Per-tab persistence of download start params: written when a download starts
+// (InfoPage) and read back if /download/:id is reloaded (DownloadPage) so the SSE
+// resumes and the "Keep forever" choice survives. One key format lives here so the
+// writer and reader can't drift.
+const startKey = (downloadId) => `tk_start_${downloadId}`
+
+export function saveStartParams(downloadId, params) {
+  try {
+    sessionStorage.setItem(startKey(downloadId), JSON.stringify(params))
+  } catch {
+    // ignore unavailable sessionStorage
+  }
+}
+
+export function loadStartParams(downloadId) {
+  try {
+    const saved = sessionStorage.getItem(startKey(downloadId))
+    if (saved) return JSON.parse(saved)
+  } catch {
+    // ignore malformed/unavailable sessionStorage
+  }
+  return null
+}
+
+export function clearStartParams(downloadId) {
+  try {
+    sessionStorage.removeItem(startKey(downloadId))
+  } catch {
+    // ignore
+  }
+}

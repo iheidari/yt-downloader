@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { fileUrl, mediaKind } from '../lib/media'
 import { PlayerContext } from './playerContext.js'
 
@@ -147,20 +147,38 @@ export function PlayerProvider({ children }) {
     if (media && Number.isFinite(time)) media.currentTime = time
   }, [])
 
-  const value = {
-    current,
-    stageActive,
-    isPlaying,
-    currentTime,
-    duration,
-    loadError,
-    playTrack,
-    closePlayer,
-    togglePlay,
-    seek,
-    registerStage,
-    registerDock,
-  }
+  // Callbacks are useCallback-stable, so this only re-identifies when the state
+  // values actually change — sibling HistoryContext does the same.
+  const value = useMemo(
+    () => ({
+      current,
+      stageActive,
+      isPlaying,
+      currentTime,
+      duration,
+      loadError,
+      playTrack,
+      closePlayer,
+      togglePlay,
+      seek,
+      registerStage,
+      registerDock,
+    }),
+    [
+      current,
+      stageActive,
+      isPlaying,
+      currentTime,
+      duration,
+      loadError,
+      playTrack,
+      closePlayer,
+      togglePlay,
+      seek,
+      registerStage,
+      registerDock,
+    ],
+  )
 
   return (
     <PlayerContext.Provider value={value}>

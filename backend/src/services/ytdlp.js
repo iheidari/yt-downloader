@@ -1,7 +1,7 @@
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
-const { downloadsDir } = require('../utils/storage');
+const { ensureDownloadDir, deleteDownload } = require('../utils/storage');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -112,17 +112,6 @@ async function getVideoInfo(url) {
       info = await fetchYouTubeInfo(url);
     }
 
-    console.log(`📊 yt-dlp returned ${info.formats.length} total formats for: ${info.title}`);
-    console.log(
-      `   Video-only: ${info.formats.filter((f) => f.vcodec !== 'none' && f.acodec === 'none').length}`,
-    );
-    console.log(
-      `   Audio-only: ${info.formats.filter((f) => f.acodec !== 'none' && f.vcodec === 'none').length}`,
-    );
-    console.log(
-      `   Combined: ${info.formats.filter((f) => f.vcodec !== 'none' && f.acodec !== 'none').length}`,
-    );
-
     const videoFormats = info.formats
       .filter((f) => f.vcodec !== 'none' && f.acodec === 'none')
       .map((f) => ({
@@ -161,6 +150,11 @@ async function getVideoInfo(url) {
         quality: f.quality,
         formatNote: f.format_note,
       }));
+
+    console.log(`📊 yt-dlp returned ${info.formats.length} total formats for: ${info.title}`);
+    console.log(`   Video-only: ${videoFormats.length}`);
+    console.log(`   Audio-only: ${audioFormats.length}`);
+    console.log(`   Combined: ${combinedFormats.length}`);
 
     const subtitles = {};
     if (info.subtitles) {
@@ -201,29 +195,29 @@ function describeDownloadedFile(downloadPath, downloadId, extensions, notFoundMe
   // Pick the LARGEST matching file, not the first: a partial SABR retry can
   // leave intermediate .webm/.m4a fragments next to the final merged .mp4, and
   // the merged output is always the biggest — serving a fragment breaks playback.
-  const filename = files
+  const largest = files
     .filter((f) => extensions.some((ext) => f.toLowerCase().endsWith(ext)))
     .map((f) => {
       try {
-        return { f, size: fs.statSync(path.join(downloadPath, f)).size };
+        return { f, stat: fs.statSync(path.join(downloadPath, f)) };
       } catch {
-        return { f, size: 0 };
+        return { f, stat: null };
       }
     })
-    .sort((a, b) => b.size - a.size)[0]?.f;
+    .sort((a, b) => (b.stat?.size || 0) - (a.stat?.size || 0))[0];
 
-  if (!filename) {
+  if (!largest?.stat) {
     throw new Error(notFoundMessage);
   }
 
-  const stats = fs.statSync(path.join(downloadPath, filename));
+  const { f: filename, stat } = largest;
 
   return {
     downloadId,
     filename,
     path: path.join(downloadPath, filename),
-    size: stats.size,
-    createdAt: stats.birthtime,
+    size: stat.size,
+    createdAt: stat.birthtime,
     relativePath: path.join(downloadId, filename),
   };
 }
@@ -263,12 +257,7 @@ async function downloadVideo(
   mergeWithAudio = false,
   signal,
 ) {
-  const downloadPath = path.join(downloadsDir, downloadId);
-
-  if (!fs.existsSync(downloadPath)) {
-    fs.mkdirSync(downloadPath, { recursive: true });
-  }
-
+  const downloadPath = ensureDownloadDir(downloadId);
   const outputTemplate = path.join(downloadPath, '%(title)s.%(ext)s');
 
   try {
@@ -307,20 +296,13 @@ async function downloadVideo(
       'Downloaded file not found',
     );
   } catch (error) {
-    if (fs.existsSync(downloadPath)) {
-      fs.rmSync(downloadPath, { recursive: true, force: true });
-    }
+    deleteDownload(downloadId);
     throw error;
   }
 }
 
 async function downloadAudio(url, formatId, downloadId, onProgress, signal) {
-  const downloadPath = path.join(downloadsDir, downloadId);
-
-  if (!fs.existsSync(downloadPath)) {
-    fs.mkdirSync(downloadPath, { recursive: true });
-  }
-
+  const downloadPath = ensureDownloadDir(downloadId);
   const outputTemplate = path.join(downloadPath, '%(title)s.%(ext)s');
 
   // YouTube's SABR experiment can strip the URL from the exact format ID we
@@ -354,9 +336,7 @@ async function downloadAudio(url, formatId, downloadId, onProgress, signal) {
       'Downloaded audio file not found',
     );
   } catch (error) {
-    if (fs.existsSync(downloadPath)) {
-      fs.rmSync(downloadPath, { recursive: true, force: true });
-    }
+    deleteDownload(downloadId);
     throw error;
   }
 }
@@ -366,5 +346,4 @@ module.exports = {
   downloadVideo,
   downloadAudio,
   isSupportedUrl,
-  downloadsDir,
 };

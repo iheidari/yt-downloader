@@ -113,6 +113,18 @@ function getDownloadFilePath(downloadId, filename) {
   return null;
 }
 
+// Create (idempotently) the per-download directory and return its path. The
+// only place the download-dir layout is minted, so callers never join paths
+// under downloadsDir themselves.
+function ensureDownloadDir(downloadId) {
+  if (!isValidDownloadId(downloadId)) {
+    throw new Error(`Invalid downloadId: ${downloadId}`);
+  }
+  const dirPath = path.join(downloadsDir, downloadId);
+  fs.mkdirSync(dirPath, { recursive: true });
+  return dirPath;
+}
+
 function deleteDownload(downloadId) {
   if (!isValidDownloadId(downloadId)) return false;
   const downloadPath = path.join(downloadsDir, downloadId);
@@ -150,41 +162,26 @@ function expireDownload(downloadId) {
 }
 
 function cleanupOldDownloads(maxAgeHours = 24) {
-  if (!fs.existsSync(downloadsDir)) {
-    return { expired: 0, expiredIds: [], errors: [] };
-  }
-
   const now = Date.now();
   const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
   const expiredIds = [];
   const errors = [];
 
-  const dirs = fs.readdirSync(downloadsDir);
-
-  for (const dir of dirs) {
-    const dirPath = path.join(downloadsDir, dir);
+  // Reuse the single directory scanner. `expired` (no media files) and `kept`
+  // downloads are already surfaced by listDownloads, so this only applies the
+  // age predicate — no separate filesystem walk to keep in sync.
+  for (const download of listDownloads()) {
+    if (download.expired || download.kept) continue;
 
     try {
-      const stats = fs.statSync(dirPath);
-      if (!stats.isDirectory()) continue;
-
-      const files = fs.readdirSync(dirPath).filter((f) => f !== METADATA_FILE);
-      if (files.length === 0) continue;
-
-      const metadata = getDownloadMetadata(dir);
-      if (metadata?.kept) continue;
-
-      const createdAtMs = metadata?.createdAt
-        ? new Date(metadata.createdAt).getTime()
-        : stats.mtimeMs;
-      const age = now - createdAtMs;
-
-      if (age > maxAgeMs) {
-        expireDownload(dir);
-        expiredIds.push(dir);
+      const createdAtMs = download.createdAt ? new Date(download.createdAt).getTime() : NaN;
+      // Missing/invalid createdAt: leave it alone rather than expiring blindly.
+      if (Number.isFinite(createdAtMs) && now - createdAtMs > maxAgeMs) {
+        expireDownload(download.downloadId);
+        expiredIds.push(download.downloadId);
       }
     } catch (err) {
-      errors.push({ dir, error: err.message });
+      errors.push({ dir: download.downloadId, error: err.message });
     }
   }
 
@@ -197,6 +194,7 @@ module.exports = {
   getDownloadMetadata,
   listDownloads,
   getDownloadFilePath,
+  ensureDownloadDir,
   deleteDownload,
   expireDownload,
   setKept,

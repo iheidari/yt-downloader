@@ -2,11 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import ProgressBar from '../components/ProgressBar'
 import { useHistory } from '../context/useHistory'
-import { fetchDownloads } from '../lib/media'
+import { clearStartParams, fetchDownloads, loadStartParams } from '../lib/media'
 
 const WATCH_POLL_MS = 2000
 const WATCH_TIMEOUT_MS = 5 * 60 * 1000
-const startKey = (id) => `tk_start_${id}`
 
 function DownloadPage() {
   const { downloadId } = useParams()
@@ -18,16 +17,10 @@ function DownloadPage() {
   // wipes that — recover them from sessionStorage (per-tab, written at start)
   // so the SSE resumes and the "Keep forever" choice isn't silently dropped.
   const stateStart = location.state?.start ? location.state : null
-  const startParams = useMemo(() => {
-    if (stateStart) return stateStart
-    try {
-      const saved = sessionStorage.getItem(startKey(downloadId))
-      if (saved) return JSON.parse(saved)
-    } catch {
-      // ignore malformed/unavailable sessionStorage
-    }
-    return null
-  }, [stateStart, downloadId])
+  const startParams = useMemo(
+    () => stateStart || loadStartParams(downloadId),
+    [stateStart, downloadId],
+  )
 
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState(null)
@@ -40,12 +33,18 @@ function DownloadPage() {
     let eventSource = null
     let pollCancelled = false
     let pollTimer = null
-    const clearStart = () => {
-      try {
-        sessionStorage.removeItem(startKey(downloadId))
-      } catch {
-        // ignore
-      }
+    // Reconcile against the file list: if the download is present (and not
+    // expired), adopt it and jump to the player. Shared by the SSE onerror
+    // recovery and the no-start-params poll fallback.
+    const resolveIfReady = async () => {
+      const all = await fetchDownloads(apiUrl)
+      if (pollCancelled) return false
+      const found = all.find((d) => d.downloadId === downloadId && !d.expired)
+      if (!found) return false
+      addDownload(found)
+      clearStartParams(downloadId)
+      navigate(`/play/${downloadId}`, { replace: true })
+      return true
     }
     const startTimer = setTimeout(() => {
       if (startParams) {
@@ -70,12 +69,12 @@ function DownloadPage() {
           } else if (data.type === 'complete') {
             setProgress(100)
             addDownload(data.data)
-            clearStart()
+            clearStartParams(downloadId)
             eventSource.close()
             navigate(`/play/${downloadId}`, { replace: true })
           } else if (data.type === 'error') {
             setError(data.error || 'Download failed')
-            clearStart()
+            clearStartParams(downloadId)
             eventSource.close()
           }
         }
@@ -86,15 +85,7 @@ function DownloadPage() {
           // even when the download finished server-side. Reconcile against the
           // file list before declaring failure.
           try {
-            const all = await fetchDownloads(apiUrl)
-            if (pollCancelled) return
-            const found = all.find((d) => d.downloadId === downloadId && !d.expired)
-            if (found) {
-              addDownload(found)
-              clearStart()
-              navigate(`/play/${downloadId}`, { replace: true })
-              return
-            }
+            if (await resolveIfReady()) return
           } catch {
             // fall through to the error state
           }
@@ -105,14 +96,7 @@ function DownloadPage() {
         const poll = async () => {
           if (pollCancelled) return
           try {
-            const all = await fetchDownloads(apiUrl)
-            if (pollCancelled) return
-            const found = all.find((d) => d.downloadId === downloadId && !d.expired)
-            if (found) {
-              addDownload(found)
-              navigate(`/play/${downloadId}`, { replace: true })
-              return
-            }
+            if (await resolveIfReady()) return
             if (Date.now() - start > WATCH_TIMEOUT_MS) {
               setError('Download not found or timed out. It may have failed.')
               return

@@ -3,6 +3,7 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import BackLink from '../components/BackLink'
 import FormatSelector from '../components/FormatSelector'
 import { useHistory } from '../context/useHistory'
+import { saveStartParams } from '../lib/media'
 
 function InfoPage() {
   const [searchParams] = useSearchParams()
@@ -51,13 +52,7 @@ function InfoPage() {
       const response = await fetch(`${apiUrl}/api/download`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: info.originalUrl,
-          formatId,
-          type,
-          title: info.title,
-          thumbnail: info.thumbnail,
-        }),
+        body: JSON.stringify({ url: info.originalUrl, formatId, type }),
       })
       const data = await response.json()
       if (!data.success) throw new Error(data.error)
@@ -74,11 +69,7 @@ function InfoPage() {
       }
       // Persist per-tab so a reload of the download page can resume the SSE
       // (and keep the "Keep forever" choice) instead of losing router state.
-      try {
-        sessionStorage.setItem(`tk_start_${downloadId}`, JSON.stringify(startState))
-      } catch {
-        // ignore unavailable sessionStorage
-      }
+      saveStartParams(downloadId, startState)
       navigate(`/download/${downloadId}`, { replace: true, state: startState })
     } catch (err) {
       setError(err.message || 'Failed to start download')
