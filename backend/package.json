@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "cleanup": "node src/services/cleanup.js"
+    "cleanup": "node src/services/cleanup.js",
+    "lint": "biome check .",
+    "format": "biome format --write ."
   },
   "keywords": ["youtube", "downloader", "yt-dlp"],
   "author": "",
