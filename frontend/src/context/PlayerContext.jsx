@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { fileUrl, isAudioFile } from '../lib/media'
+import { fileUrl, mediaKind } from '../lib/media'
 import { PlayerContext } from './playerContext.js'
 
 // Build the player's view of a download. `download` comes from history/cold-lookup.
@@ -8,7 +8,7 @@ function toTrack(download, apiUrl) {
     downloadId: download.downloadId,
     title: download.title,
     filename: download.filename,
-    isAudio: isAudioFile(download.filename),
+    isAudio: mediaKind(download) === 'audio',
     streamUrl: fileUrl(apiUrl, download.downloadId, download.filename),
     downloadUrl: fileUrl(apiUrl, download.downloadId, download.filename, { download: true }),
   }
@@ -89,8 +89,12 @@ export function PlayerProvider({ children }) {
     const onPause = () => setIsPlaying(false)
     const onTime = () => setCurrentTime(media.currentTime || 0)
     const onMeta = () => setDuration(media.duration || 0)
+    // Trust the element's own MediaError: it's set on a real failure (e.g. an
+    // expired file 404ing) and cleared by load() on teardown, so this shows the
+    // friendly "unable to play" stage without false positives — and without
+    // depending on currentSrc, which can be cleared for an expired source.
     const onError = () => {
-      if (media.currentSrc) setLoadError(true)
+      if (media.error) setLoadError(true)
     }
     media.addEventListener('play', onPlay)
     media.addEventListener('pause', onPause)

@@ -12,10 +12,12 @@ const {
 
 // RFC 5987 encoding for unicode filenames in Content-Disposition header
 function encodeRFC5987(filename) {
-  // Encode non-ASCII characters according to RFC 5987
-  return encodeURIComponent(filename)
-    .replace(/['()]/g, escape)
-    .replace(/%(?![0-9A-Fa-f]{2})/g, '%25');
+  // encodeURIComponent leaves !'()* untouched, but RFC 5987 attr-char forbids
+  // them — percent-encode the ones it misses. (Avoids the deprecated `escape`.)
+  return encodeURIComponent(filename).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
 }
 
 function getContentDisposition(filename, isDownload) {
@@ -55,8 +57,14 @@ router.get('/:downloadId/:filename', (req, res) => {
     });
   }
 
-  const stat = fs.statSync(filePath);
-  const range = req.headers.range;
+  let stat;
+  try {
+    // The file can vanish between the existence check and here (hourly cleanup
+    // or a concurrent DELETE), so stat defensively → clean 404, never a raw 500.
+    stat = fs.statSync(filePath);
+  } catch {
+    return res.status(404).json({ success: false, error: 'File not found' });
+  }
 
   // Decode URL-encoded filename
   const decodedFilename = decodeURIComponent(filename);
@@ -84,10 +92,43 @@ router.get('/:downloadId/:filename', (req, res) => {
   res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
   res.setHeader('Accept-Ranges', 'bytes');
 
+  // A read error mid-stream (file deleted, disk issue) must not crash the
+  // process on an unhandled 'error' event.
+  const onStreamError = (err) => {
+    console.error(`❌ File stream error: ${err.message}`);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: 'Failed to read file' });
+    } else {
+      res.destroy(err);
+    }
+  };
+
+  const range = req.headers.range;
+
   if (range) {
-    const parts = range.replace(/bytes=/, '').split('-');
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+    if (!match || (match[1] === '' && match[2] === '')) {
+      res.setHeader('Content-Range', `bytes */${stat.size}`);
+      return res.status(416).end();
+    }
+
+    let start;
+    let end;
+    if (match[1] === '') {
+      // Suffix range: bytes=-N → last N bytes.
+      const suffix = parseInt(match[2], 10);
+      start = Math.max(0, stat.size - suffix);
+      end = stat.size - 1;
+    } else {
+      start = parseInt(match[1], 10);
+      end = match[2] === '' ? stat.size - 1 : parseInt(match[2], 10);
+    }
+
+    if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= stat.size) {
+      res.setHeader('Content-Range', `bytes */${stat.size}`);
+      return res.status(416).end();
+    }
+    end = Math.min(end, stat.size - 1);
     const chunksize = end - start + 1;
 
     res.status(206);
@@ -95,10 +136,12 @@ router.get('/:downloadId/:filename', (req, res) => {
     res.setHeader('Content-Length', chunksize);
 
     const stream = fs.createReadStream(filePath, { start, end });
+    stream.on('error', onStreamError);
     stream.pipe(res);
   } else {
     res.setHeader('Content-Length', stat.size);
     const stream = fs.createReadStream(filePath);
+    stream.on('error', onStreamError);
     stream.pipe(res);
   }
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { fileUrl } from '../lib/media'
+import { fetchDownloads, fileUrl } from '../lib/media'
 import {
   EXPIRED_STORAGE_KEY,
   HISTORY_API_URL,
@@ -50,17 +50,15 @@ export function HistoryProvider({ children }) {
     let cancelled = false
     const sync = async () => {
       try {
-        const response = await fetch(`${HISTORY_API_URL}/api/files`)
-        const data = await response.json()
+        const all = await fetchDownloads(HISTORY_API_URL)
         if (cancelled) return
-        if (!data.success || !Array.isArray(data.data)) return
 
         const sortByDate = (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-        const active = data.data
+        const active = all
           .filter((d) => !d.expired)
           .map(decorate)
           .sort(sortByDate)
-        const expiredFromServer = data.data.filter((d) => d.expired).sort(sortByDate)
+        const expiredFromServer = all.filter((d) => d.expired).sort(sortByDate)
 
         setHistory(active)
         setExpired(expiredFromServer)

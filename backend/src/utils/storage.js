@@ -4,19 +4,48 @@ const fs = require('node:fs');
 const downloadsDir = path.join(__dirname, '../../downloads');
 const METADATA_FILE = 'metadata.json';
 
+// downloadIds are server-minted UUIDs. Anything else in a route param is an
+// injection attempt — reject it before it ever reaches path.join / fs.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidDownloadId(downloadId) {
+  return typeof downloadId === 'string' && UUID_RE.test(downloadId);
+}
+
+// Resolve `segments` under `base` and confirm the result stays inside it.
+// Guards against `..` / absolute-path traversal in user-controlled segments.
+function resolveWithin(base, ...segments) {
+  const root = path.resolve(base);
+  const target = path.resolve(root, ...segments);
+  if (target !== root && !target.startsWith(root + path.sep)) return null;
+  return target;
+}
+
+let tmpCounter = 0;
+
 function getMetadataPath(downloadId) {
   return path.join(downloadsDir, downloadId, METADATA_FILE);
 }
 
 function saveDownloadMetadata(downloadId, metadata) {
+  if (!isValidDownloadId(downloadId)) return;
   const metadataPath = getMetadataPath(downloadId);
-  fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+  // Write to a temp file and rename so a crash mid-write can't leave a
+  // half-written metadata.json that breaks JSON.parse for the whole listing.
+  const tmpPath = `${metadataPath}.${process.pid}.${tmpCounter++}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(metadata, null, 2));
+  fs.renameSync(tmpPath, metadataPath);
 }
 
 function getDownloadMetadata(downloadId) {
+  if (!isValidDownloadId(downloadId)) return null;
   const metadataPath = getMetadataPath(downloadId);
-  if (fs.existsSync(metadataPath)) {
-    return JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+  try {
+    if (fs.existsSync(metadataPath)) {
+      return JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+    }
+  } catch (err) {
+    console.error(`⚠️  Corrupt metadata for ${downloadId}: ${err.message}`);
   }
   return null;
 }
@@ -32,34 +61,60 @@ function listDownloads() {
   const downloads = [];
 
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+    // One corrupt directory/metadata row must not take down the whole listing
+    // (which the frontend polls on every page).
+    try {
+      if (!entry.isDirectory()) continue;
 
-    const metadata = getDownloadMetadata(entry.name);
-    if (!metadata) continue;
+      const metadata = getDownloadMetadata(entry.name);
+      if (!metadata) continue;
 
-    const dirPath = path.join(downloadsDir, entry.name);
-    const files = fs.readdirSync(dirPath).filter((f) => f !== METADATA_FILE);
-    downloads.push({
-      downloadId: entry.name,
-      ...metadata,
-      files,
-      expired: files.length === 0,
-      path: dirPath,
-    });
+      const dirPath = path.join(downloadsDir, entry.name);
+      const files = fs.readdirSync(dirPath).filter((f) => f !== METADATA_FILE);
+      downloads.push({
+        downloadId: entry.name,
+        ...metadata,
+        files,
+        expired: files.length === 0,
+        path: dirPath,
+      });
+    } catch (err) {
+      console.error(`⚠️  Skipping unreadable download ${entry.name}: ${err.message}`);
+    }
   }
 
   return downloads.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
 function getDownloadFilePath(downloadId, filename) {
-  const filePath = path.join(downloadsDir, downloadId, filename);
-  if (fs.existsSync(filePath)) {
-    return filePath;
+  if (!isValidDownloadId(downloadId)) return null;
+  // Reject any path separators / traversal in the filename before touching fs.
+  if (
+    typeof filename !== 'string' ||
+    filename === '' ||
+    filename === '.' ||
+    filename === '..' ||
+    filename.includes('/') ||
+    filename.includes('\\')
+  ) {
+    return null;
+  }
+
+  const filePath = resolveWithin(downloadsDir, downloadId, filename);
+  if (!filePath) return null;
+
+  try {
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      return filePath;
+    }
+  } catch {
+    // fall through to null
   }
   return null;
 }
 
 function deleteDownload(downloadId) {
+  if (!isValidDownloadId(downloadId)) return false;
   const downloadPath = path.join(downloadsDir, downloadId);
   if (fs.existsSync(downloadPath)) {
     fs.rmSync(downloadPath, { recursive: true, force: true });
@@ -77,6 +132,7 @@ function setKept(downloadId, kept) {
 }
 
 function expireDownload(downloadId) {
+  if (!isValidDownloadId(downloadId)) return false;
   const dirPath = path.join(downloadsDir, downloadId);
   if (!fs.existsSync(dirPath)) return false;
 

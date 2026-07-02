@@ -1,13 +1,9 @@
 import { useLayoutEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayer } from '../context/usePlayer'
+import { formatDuration } from '../lib/media'
 
-const fmt = (s) => {
-  if (!Number.isFinite(s) || s < 0) return '0:00'
-  const m = Math.floor(s / 60)
-  const sec = Math.floor(s % 60)
-  return `${m}:${sec.toString().padStart(2, '0')}`
-}
+const fmt = (s) => formatDuration(s, '0:00')
 
 // The persistent bottom bar. Shown on every page once something is playing, EXCEPT
 // the play page (where the full-size stage owns the element). It adopts the same

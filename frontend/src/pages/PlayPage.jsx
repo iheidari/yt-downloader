@@ -4,7 +4,7 @@ import BackLink from '../components/BackLink'
 import VideoPlayer from '../components/VideoPlayer'
 import { useHistory } from '../context/useHistory'
 import { usePlayer } from '../context/usePlayer'
-import { fileUrl } from '../lib/media'
+import { fetchDownloads, fileUrl } from '../lib/media'
 
 function PlayPageContent({ downloadId }) {
   const { history, apiUrl, findById } = useHistory()
@@ -17,26 +17,23 @@ function PlayPageContent({ downloadId }) {
     if (fromContext) return
     let cancelled = false
 
-    fetch(`${apiUrl}/api/files`)
-      .then((r) => r.json())
-      .then((data) => {
+    fetchDownloads(apiUrl)
+      .then((all) => {
         if (cancelled) return
-        if (data.success && Array.isArray(data.data)) {
-          const found = data.data.find((d) => d.downloadId === downloadId)
-          if (found && !found.expired) {
-            setColdResult({
-              status: 'found',
-              data: {
-                ...found,
-                fileUrl: fileUrl(apiUrl, found.downloadId, found.filename),
-              },
-            })
-            return
-          }
-          if (found?.expired) {
-            setColdResult({ status: 'missing', data: found })
-            return
-          }
+        const found = all.find((d) => d.downloadId === downloadId)
+        if (found && !found.expired) {
+          setColdResult({
+            status: 'found',
+            data: {
+              ...found,
+              fileUrl: fileUrl(apiUrl, found.downloadId, found.filename),
+            },
+          })
+          return
+        }
+        if (found?.expired) {
+          setColdResult({ status: 'missing', data: found })
+          return
         }
         setColdResult({ status: 'missing', data: findById(downloadId) })
       })

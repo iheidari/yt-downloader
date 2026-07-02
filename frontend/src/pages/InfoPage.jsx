@@ -63,18 +63,23 @@ function InfoPage() {
       if (!data.success) throw new Error(data.error)
 
       const { downloadId } = data.data
-      navigate(`/download/${downloadId}`, {
-        replace: true,
-        state: {
-          start: true,
-          url: info.originalUrl,
-          formatId,
-          type,
-          title: info.title,
-          thumbnail: info.thumbnail,
-          keep,
-        },
-      })
+      const startState = {
+        start: true,
+        url: info.originalUrl,
+        formatId,
+        type,
+        title: info.title,
+        thumbnail: info.thumbnail,
+        keep,
+      }
+      // Persist per-tab so a reload of the download page can resume the SSE
+      // (and keep the "Keep forever" choice) instead of losing router state.
+      try {
+        sessionStorage.setItem(`tk_start_${downloadId}`, JSON.stringify(startState))
+      } catch {
+        // ignore unavailable sessionStorage
+      }
+      navigate(`/download/${downloadId}`, { replace: true, state: startState })
     } catch (err) {
       setError(err.message || 'Failed to start download')
       setStartingFormat(null)

@@ -1,19 +1,14 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useHistory } from '../context/useHistory'
-import { fileUrl, formatFileSize, isAudioFile } from '../lib/media'
+import { useShareLink } from '../hooks/useShareLink'
+import { fileUrl, formatFileSize, mediaKind } from '../lib/media'
 
 const FILTERS = [
   { id: 'all', label: 'All' },
   { id: 'video', label: 'Videos' },
   { id: 'audio', label: 'Audio' },
 ]
-
-function getFileType(d) {
-  if (d.type === 'audio') return 'audio'
-  if (d.type === 'video' || d.type === 'combined') return 'video'
-  return isAudioFile(d.filename) ? 'audio' : 'video'
-}
 
 function formatRelative(dateString) {
   if (!dateString) return ''
@@ -34,18 +29,8 @@ function formatRelative(dateString) {
 }
 
 function ActiveCard({ download, apiUrl, onDelete, onKeep }) {
-  const [copied, setCopied] = useState(false)
-  const isAudio = getFileType(download) === 'audio'
-
-  const handleShare = async () => {
-    try {
-      await navigator.clipboard.writeText(`${window.location.origin}/play/${download.downloadId}`)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch (err) {
-      console.error('❌ Share copy failed:', err)
-    }
-  }
+  const { copied, share } = useShareLink(download.downloadId)
+  const isAudio = mediaKind(download) === 'audio'
 
   const downloadHref = fileUrl(apiUrl, download.downloadId, download.filename, { download: true })
 
@@ -150,7 +135,7 @@ function ActiveCard({ download, apiUrl, onDelete, onKeep }) {
           <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={handleShare}
+              onClick={share}
               className="p-2 text-on-surface-variant hover:text-primary hover:bg-surface-container-high transition-all rounded-full"
               title={copied ? 'Copied!' : 'Share play link'}
             >
@@ -180,7 +165,7 @@ function ActiveCard({ download, apiUrl, onDelete, onKeep }) {
 }
 
 function ExpiredCard({ download, onForget }) {
-  const isAudio = getFileType(download) === 'audio'
+  const isAudio = mediaKind(download) === 'audio'
 
   return (
     <div className="group bg-surface-container-low/50 border border-surface-variant/50 rounded-lg p-4 flex flex-col sm:flex-row gap-4 opacity-75 hover:opacity-100 transition-opacity">
@@ -271,7 +256,7 @@ function DownloadsPage() {
       ...history.map((d) => ({ ...d, _expired: false })),
       ...expired.map((d) => ({ ...d, _expired: true })),
     ]
-    const filtered = filter === 'all' ? merged : merged.filter((d) => getFileType(d) === filter)
+    const filtered = filter === 'all' ? merged : merged.filter((d) => mediaKind(d) === filter)
     return filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
   }, [history, expired, filter])
 

@@ -1,16 +1,9 @@
 import { useState } from 'react'
-import { formatFileSize } from '../lib/media'
+import { formatDuration, formatFileSize } from '../lib/media'
 import BackLink from './BackLink'
 
 function FormatSelector({ info, onDownload, startingFormat = null }) {
   const [keep, setKeep] = useState(false)
-
-  const formatDuration = (seconds) => {
-    if (!seconds && seconds !== 0) return ''
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins}:${secs.toString().padStart(2, '0')}`
-  }
 
   const getHeight = (res) => {
     if (!res) return 0

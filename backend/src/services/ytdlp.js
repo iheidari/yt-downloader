@@ -28,11 +28,25 @@ console.log(`🔧 Node.js for yt-dlp: ${process.execPath}`);
 // Namespaced under `youtube:` so other extractors are unaffected.
 const YOUTUBE_EXTRACTOR_ARGS = 'youtube:player_client=android_vr;formats=missing_pot';
 
+// The URL is forwarded verbatim to `yt-dlp <url>`. yt-dlp's generic extractor
+// happily accepts file:// (local read) and internal http hosts (SSRF pivot),
+// so only allow real http(s) URLs before anything is spawned.
+function isSupportedUrl(value) {
+  if (typeof value !== 'string') return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function runYtDlp(args, options = {}) {
   return new Promise((resolve, reject) => {
     const ytDlp = spawn(ytDlpBin, args, {
       timeout: options.timeout || 120000,
       env: ytDlpEnv,
+      signal: options.signal,
       ...options.spawnOptions,
     });
 
@@ -184,7 +198,19 @@ async function getVideoInfo(url) {
 // media file by extension and describe it for the routes/storage layer.
 function describeDownloadedFile(downloadPath, downloadId, extensions, notFoundMessage) {
   const files = fs.readdirSync(downloadPath);
-  const filename = files.find((f) => extensions.some((ext) => f.toLowerCase().endsWith(ext)));
+  // Pick the LARGEST matching file, not the first: a partial SABR retry can
+  // leave intermediate .webm/.m4a fragments next to the final merged .mp4, and
+  // the merged output is always the biggest — serving a fragment breaks playback.
+  const filename = files
+    .filter((f) => extensions.some((ext) => f.toLowerCase().endsWith(ext)))
+    .map((f) => {
+      try {
+        return { f, size: fs.statSync(path.join(downloadPath, f)).size };
+      } catch {
+        return { f, size: 0 };
+      }
+    })
+    .sort((a, b) => b.size - a.size)[0]?.f;
 
   if (!filename) {
     throw new Error(notFoundMessage);
@@ -204,10 +230,12 @@ function describeDownloadedFile(downloadPath, downloadId, extensions, notFoundMe
 
 // Run a download, retrying the transient SABR/format failures YouTube throws
 // mid-session. `label` only tags the retry log line ("Video"/"Audio").
-async function runDownloadWithRetry(args, onProgress, label) {
+async function runDownloadWithRetry(args, onProgress, label, signal) {
   for (let attempt = 1; attempt <= 3; attempt++) {
+    if (signal?.aborted) throw new Error('Download aborted');
     try {
       await runYtDlp(args, {
+        signal,
         onProgress: (line) => {
           const match = line.match(/(\d+\.?\d*)%/);
           if (match && onProgress) {
@@ -227,7 +255,14 @@ async function runDownloadWithRetry(args, onProgress, label) {
   }
 }
 
-async function downloadVideo(url, formatId, downloadId, onProgress, mergeWithAudio = false) {
+async function downloadVideo(
+  url,
+  formatId,
+  downloadId,
+  onProgress,
+  mergeWithAudio = false,
+  signal,
+) {
   const downloadPath = path.join(downloadsDir, downloadId);
 
   if (!fs.existsSync(downloadPath)) {
@@ -263,7 +298,7 @@ async function downloadVideo(url, formatId, downloadId, onProgress, mergeWithAud
 
     args.push(url);
 
-    await runDownloadWithRetry(args, onProgress, 'Video');
+    await runDownloadWithRetry(args, onProgress, 'Video', signal);
 
     return describeDownloadedFile(
       downloadPath,
@@ -279,7 +314,7 @@ async function downloadVideo(url, formatId, downloadId, onProgress, mergeWithAud
   }
 }
 
-async function downloadAudio(url, formatId, downloadId, onProgress) {
+async function downloadAudio(url, formatId, downloadId, onProgress, signal) {
   const downloadPath = path.join(downloadsDir, downloadId);
 
   if (!fs.existsSync(downloadPath)) {
@@ -309,6 +344,7 @@ async function downloadAudio(url, formatId, downloadId, onProgress) {
       ],
       onProgress,
       'Audio',
+      signal,
     );
 
     return describeDownloadedFile(
@@ -325,55 +361,10 @@ async function downloadAudio(url, formatId, downloadId, onProgress) {
   }
 }
 
-async function downloadSubtitle(url, lang, ext, downloadId) {
-  const downloadPath = path.join(downloadsDir, downloadId);
-
-  if (!fs.existsSync(downloadPath)) {
-    fs.mkdirSync(downloadPath, { recursive: true });
-  }
-
-  const outputTemplate = path.join(downloadPath, '%(title)s');
-
-  await runYtDlp([
-    '--extractor-args',
-    YOUTUBE_EXTRACTOR_ARGS,
-    '--write-sub',
-    '--sub-langs',
-    lang,
-    '--convert-subs',
-    ext || 'srt',
-    '--skip-download',
-    '-o',
-    outputTemplate,
-    '--no-playlist',
-    url,
-  ]);
-
-  const files = fs.readdirSync(downloadPath);
-  const subtitleFile = files.find(
-    (f) => f.includes(lang) && ['.srt', '.vtt', '.ass'].some((e) => f.endsWith(e)),
-  );
-
-  if (!subtitleFile) {
-    throw new Error('Subtitle file not found');
-  }
-
-  const stats = fs.statSync(path.join(downloadPath, subtitleFile));
-
-  return {
-    downloadId,
-    filename: subtitleFile,
-    path: path.join(downloadPath, subtitleFile),
-    size: stats.size,
-    createdAt: stats.birthtime,
-    relativePath: path.join(downloadId, subtitleFile),
-  };
-}
-
 module.exports = {
   getVideoInfo,
   downloadVideo,
   downloadAudio,
-  downloadSubtitle,
+  isSupportedUrl,
   downloadsDir,
 };

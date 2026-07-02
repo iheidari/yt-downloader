@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
-const { downloadVideo, downloadAudio } = require('../services/ytdlp');
+const { downloadVideo, downloadAudio, isSupportedUrl } = require('../services/ytdlp');
 const { saveDownloadMetadata } = require('../utils/storage');
 
 router.post('/', async (req, res) => {
@@ -11,6 +11,13 @@ router.post('/', async (req, res) => {
     return res.status(400).json({
       success: false,
       error: 'URL and formatId are required',
+    });
+  }
+
+  if (!isSupportedUrl(url)) {
+    return res.status(400).json({
+      success: false,
+      error: 'A valid http(s) URL is required',
     });
   }
 
@@ -39,6 +46,13 @@ router.get('/progress/:downloadId', async (req, res) => {
     });
   }
 
+  if (!isSupportedUrl(url)) {
+    return res.status(400).json({
+      success: false,
+      error: 'A valid http(s) URL is required',
+    });
+  }
+
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
@@ -46,17 +60,30 @@ router.get('/progress/:downloadId', async (req, res) => {
   res.flushHeaders();
 
   const sendEvent = (data) => {
+    if (res.writableEnded) return;
     res.write(`data: ${JSON.stringify(data)}\n\n`);
     if (typeof res.flush === 'function') res.flush();
   };
 
   let result;
   let progress = 0;
+  let finished = false;
 
   // Heartbeat to prevent proxy timeout (every 15 seconds)
   const heartbeatInterval = setInterval(() => {
     sendEvent({ type: 'ping', downloadId, progress });
   }, 15000);
+
+  // If the client navigates away / closes the tab, stop wasting a yt-dlp
+  // subprocess (and the heartbeat) on a dead connection.
+  const abortController = new AbortController();
+  req.on('close', () => {
+    if (finished) return;
+    finished = true;
+    clearInterval(heartbeatInterval);
+    abortController.abort();
+    console.log(`⚠️  Client disconnected — aborting download ${downloadId}`);
+  });
 
   try {
     sendEvent({ type: 'started', downloadId, progress: 0 });
@@ -66,14 +93,15 @@ router.get('/progress/:downloadId', async (req, res) => {
       sendEvent({ type: 'progress', downloadId, progress });
     };
 
+    const { signal } = abortController;
     if (type === 'audio') {
-      result = await downloadAudio(url, formatId, downloadId, onProgress);
+      result = await downloadAudio(url, formatId, downloadId, onProgress, signal);
     } else if (type === 'video') {
       // Video-only format - will be merged with best audio
-      result = await downloadVideo(url, formatId, downloadId, onProgress, true);
+      result = await downloadVideo(url, formatId, downloadId, onProgress, true, signal);
     } else {
       // Combined format
-      result = await downloadVideo(url, formatId, downloadId, onProgress, false);
+      result = await downloadVideo(url, formatId, downloadId, onProgress, false, signal);
     }
 
     const metadata = {
@@ -88,6 +116,10 @@ router.get('/progress/:downloadId', async (req, res) => {
       createdAt: new Date().toISOString(),
       downloadId,
     };
+
+    // Client already gone (aborted mid-download): don't persist or emit.
+    if (finished) return;
+    finished = true;
 
     saveDownloadMetadata(downloadId, metadata);
 
@@ -104,8 +136,11 @@ router.get('/progress/:downloadId', async (req, res) => {
     clearInterval(heartbeatInterval);
     res.end();
   } catch (error) {
-    console.error('Download error:', error);
     clearInterval(heartbeatInterval);
+    // Swallow errors caused by our own abort-on-disconnect.
+    if (finished) return;
+    finished = true;
+    console.error('❌ Download error:', error);
     sendEvent({
       type: 'error',
       downloadId,
