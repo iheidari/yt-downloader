@@ -1,13 +1,9 @@
-import { useRef, useLayoutEffect } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayer } from '../context/usePlayer'
+import { formatDuration } from '../lib/media'
 
-const fmt = (s) => {
-  if (!Number.isFinite(s) || s < 0) return '0:00'
-  const m = Math.floor(s / 60)
-  const sec = Math.floor(s % 60)
-  return `${m}:${sec.toString().padStart(2, '0')}`
-}
+const fmt = (s) => formatDuration(s, '0:00')
 
 // The persistent bottom bar. Shown on every page once something is playing, EXCEPT
 // the play page (where the full-size stage owns the element). It adopts the same
@@ -22,7 +18,7 @@ function PlayerDock() {
     togglePlay,
     seek,
     closePlayer,
-    registerDock
+    registerDock,
   } = usePlayer()
   const navigate = useNavigate()
   const thumbRef = useRef(null)
@@ -44,6 +40,7 @@ function PlayerDock() {
       <div className="max-w-container-max mx-auto px-gutter py-2 flex items-center gap-3">
         {/* Thumbnail — hosts the shared element; music icon overlays it for audio. */}
         <button
+          type="button"
           onClick={expand}
           title="Expand player"
           className="relative w-[72px] h-[42px] shrink-0 rounded-md overflow-hidden bg-black"
@@ -60,6 +57,7 @@ function PlayerDock() {
         </button>
 
         <button
+          type="button"
           onClick={togglePlay}
           title={isPlaying ? 'Pause' : 'Play'}
           className="shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-primary text-on-primary hover:bg-primary-container transition-colors active:scale-95"
@@ -71,6 +69,7 @@ function PlayerDock() {
 
         <div className="min-w-0 flex-1">
           <button
+            type="button"
             onClick={expand}
             className="block w-full text-left truncate font-label-md text-label-md text-on-surface hover:text-primary transition-colors"
             title={current.title}
@@ -98,6 +97,7 @@ function PlayerDock() {
         </div>
 
         <button
+          type="button"
           onClick={expand}
           title="Expand player"
           className="hidden sm:flex shrink-0 w-9 h-9 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-highest transition-colors"
@@ -105,6 +105,7 @@ function PlayerDock() {
           <span className="material-symbols-outlined">open_in_full</span>
         </button>
         <button
+          type="button"
           onClick={closePlayer}
           title="Close player"
           className="shrink-0 w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-highest transition-colors"

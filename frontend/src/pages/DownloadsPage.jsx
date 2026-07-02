@@ -1,25 +1,14 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useHistory } from '../context/useHistory'
+import { useShareLink } from '../hooks/useShareLink'
+import { fileUrl, formatFileSize, mediaKind } from '../lib/media'
 
 const FILTERS = [
   { id: 'all', label: 'All' },
   { id: 'video', label: 'Videos' },
-  { id: 'audio', label: 'Audio' }
+  { id: 'audio', label: 'Audio' },
 ]
-
-function getFileType(d) {
-  if (d.type === 'audio') return 'audio'
-  if (d.type === 'video' || d.type === 'combined') return 'video'
-  return /\.(mp3|m4a|ogg|opus|wav|flac)$/i.test(d.filename || '') ? 'audio' : 'video'
-}
-
-function formatFileSize(bytes) {
-  if (!bytes) return 'Unknown size'
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
-  return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`
-}
 
 function formatRelative(dateString) {
   if (!dateString) return ''
@@ -40,20 +29,10 @@ function formatRelative(dateString) {
 }
 
 function ActiveCard({ download, apiUrl, onDelete, onKeep }) {
-  const [copied, setCopied] = useState(false)
-  const isAudio = getFileType(download) === 'audio'
+  const { copied, share } = useShareLink(download.downloadId)
+  const isAudio = mediaKind(download) === 'audio'
 
-  const handleShare = async () => {
-    try {
-      await navigator.clipboard.writeText(`${window.location.origin}/play/${download.downloadId}`)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch (err) {
-      console.error('❌ Share copy failed:', err)
-    }
-  }
-
-  const downloadHref = `${apiUrl}/api/files/${download.downloadId}/${encodeURIComponent(download.filename)}?action=download`
+  const downloadHref = fileUrl(apiUrl, download.downloadId, download.filename, { download: true })
 
   return (
     <div className="group bg-surface-container-lowest border border-surface-variant rounded-lg p-4 flex flex-col sm:flex-row gap-4 hover:shadow-md transition-shadow">
@@ -82,11 +61,16 @@ function ActiveCard({ download, apiUrl, onDelete, onKeep }) {
       <div className="flex-grow flex flex-col justify-between min-w-0">
         <div>
           <div className="flex justify-between items-start gap-2">
-            <h3 className="font-headline-md text-headline-md text-on-surface truncate pr-4">{download.title}</h3>
+            <h3 className="font-headline-md text-headline-md text-on-surface truncate pr-4">
+              {download.title}
+            </h3>
             <div className="flex items-center gap-2 flex-shrink-0">
               <button
+                type="button"
                 onClick={() => onKeep(download.downloadId, !download.kept)}
-                title={download.kept ? 'Kept — click to let it expire' : 'Keep this file from expiring'}
+                title={
+                  download.kept ? 'Kept — click to let it expire' : 'Keep this file from expiring'
+                }
                 className={
                   download.kept
                     ? 'flex items-center gap-1 text-on-primary font-label-sm text-label-sm whitespace-nowrap bg-primary px-2 py-0.5 rounded-full transition-colors active:scale-95'
@@ -126,7 +110,9 @@ function ActiveCard({ download, apiUrl, onDelete, onKeep }) {
             <span className="bg-surface-variant text-on-surface-variant px-2 py-0.5 rounded font-label-sm text-label-sm">
               {isAudio ? 'Audio' : 'Video'}
             </span>
-            <span className="text-on-surface-variant/60 font-label-sm text-label-sm">{formatFileSize(download.size)}</span>
+            <span className="text-on-surface-variant/60 font-label-sm text-label-sm">
+              {formatFileSize(download.size)}
+            </span>
             <span className="text-on-surface-variant/60 font-label-sm text-label-sm">
               • Downloaded {formatRelative(download.createdAt)}
             </span>
@@ -148,7 +134,8 @@ function ActiveCard({ download, apiUrl, onDelete, onKeep }) {
           </Link>
           <div className="flex items-center gap-1">
             <button
-              onClick={handleShare}
+              type="button"
+              onClick={share}
               className="p-2 text-on-surface-variant hover:text-primary hover:bg-surface-container-high transition-all rounded-full"
               title={copied ? 'Copied!' : 'Share play link'}
             >
@@ -163,6 +150,7 @@ function ActiveCard({ download, apiUrl, onDelete, onKeep }) {
               <span className="material-symbols-outlined">download</span>
             </a>
             <button
+              type="button"
               onClick={() => onDelete(download.downloadId)}
               className="p-2 text-on-surface-variant hover:text-error hover:bg-error-container/20 transition-all rounded-full"
               title="Delete"
@@ -177,13 +165,17 @@ function ActiveCard({ download, apiUrl, onDelete, onKeep }) {
 }
 
 function ExpiredCard({ download, onForget }) {
-  const isAudio = getFileType(download) === 'audio'
+  const isAudio = mediaKind(download) === 'audio'
 
   return (
     <div className="group bg-surface-container-low/50 border border-surface-variant/50 rounded-lg p-4 flex flex-col sm:flex-row gap-4 opacity-75 hover:opacity-100 transition-opacity">
       <div className="relative w-full sm:w-48 aspect-video flex-shrink-0 overflow-hidden rounded-md grayscale group-hover:grayscale-0 transition-all duration-500 bg-surface-container-high">
         {download.thumbnail ? (
-          <img src={download.thumbnail} alt={download.title} className="w-full h-full object-cover" />
+          <img
+            src={download.thumbnail}
+            alt={download.title}
+            className="w-full h-full object-cover"
+          />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <span className="material-symbols-outlined text-on-surface-variant/50 text-[40px]">
@@ -199,20 +191,26 @@ function ExpiredCard({ download, onForget }) {
       <div className="flex-grow flex flex-col justify-between min-w-0">
         <div>
           <div className="flex justify-between items-start gap-2">
-            <h3 className="font-headline-md text-headline-md text-on-surface/60 truncate pr-4">{download.title}</h3>
+            <h3 className="font-headline-md text-headline-md text-on-surface/60 truncate pr-4">
+              {download.title}
+            </h3>
             <span className="flex items-center gap-1 text-on-error-container font-label-sm text-label-sm whitespace-nowrap bg-error-container px-2 py-0.5 rounded-full">
               <span className="material-symbols-outlined text-[14px]">error_outline</span>
               Expired
             </span>
           </div>
           {download.url && (
-            <p className="font-label-sm text-label-sm text-on-surface-variant/60 mt-1 truncate">{download.url}</p>
+            <p className="font-label-sm text-label-sm text-on-surface-variant/60 mt-1 truncate">
+              {download.url}
+            </p>
           )}
           <div className="flex flex-wrap items-center gap-3 mt-3">
             <span className="bg-surface-variant/50 text-on-surface-variant/50 px-2 py-0.5 rounded font-label-sm text-label-sm">
               {isAudio ? 'Audio' : 'Video'}
             </span>
-            <span className="text-on-surface-variant/40 font-label-sm text-label-sm">{formatFileSize(download.size)}</span>
+            <span className="text-on-surface-variant/40 font-label-sm text-label-sm">
+              {formatFileSize(download.size)}
+            </span>
             <span className="text-on-surface-variant/40 font-label-sm text-label-sm">
               • Downloaded {formatRelative(download.createdAt)}
             </span>
@@ -229,10 +227,13 @@ function ExpiredCard({ download, onForget }) {
               Redownload
             </Link>
           ) : (
-            <span className="text-on-surface-variant/40 font-label-sm text-label-sm">No source URL</span>
+            <span className="text-on-surface-variant/40 font-label-sm text-label-sm">
+              No source URL
+            </span>
           )}
           <div className="flex items-center gap-1">
             <button
+              type="button"
               onClick={() => onForget(download.downloadId)}
               className="p-2 text-on-surface-variant hover:text-error hover:bg-error-container/20 transition-all rounded-full"
               title="Forget"
@@ -252,10 +253,10 @@ function DownloadsPage() {
 
   const items = useMemo(() => {
     const merged = [
-      ...history.map(d => ({ ...d, _expired: false })),
-      ...expired.map(d => ({ ...d, _expired: true }))
+      ...history.map((d) => ({ ...d, _expired: false })),
+      ...expired.map((d) => ({ ...d, _expired: true })),
     ]
-    const filtered = filter === 'all' ? merged : merged.filter(d => getFileType(d) === filter)
+    const filtered = filter === 'all' ? merged : merged.filter((d) => mediaKind(d) === filter)
     return filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
   }, [history, expired, filter])
 
@@ -265,12 +266,14 @@ function DownloadsPage() {
         <div>
           <h2 className="font-headline-lg text-headline-lg text-on-surface mb-2">My Downloads</h2>
           <p className="font-body-md text-body-md text-on-surface-variant">
-            Manage your saved media. Files expire after 24 hours unless you keep them, and can be re-downloaded from the source.
+            Manage your saved media. Files expire after 24 hours unless you keep them, and can be
+            re-downloaded from the source.
           </p>
         </div>
         <div className="flex items-center gap-2 bg-surface-container-low p-1 rounded-lg">
-          {FILTERS.map(f => (
+          {FILTERS.map((f) => (
             <button
+              type="button"
               key={f.id}
               onClick={() => setFilter(f.id)}
               className={
@@ -287,20 +290,31 @@ function DownloadsPage() {
 
       {items.length === 0 ? (
         <div className="bg-surface-container-low border border-outline-variant rounded-xl p-12 text-center">
-          <span className="material-symbols-outlined text-[48px] text-outline-variant mb-3 block">cloud_download</span>
+          <span className="material-symbols-outlined text-[48px] text-outline-variant mb-3 block">
+            cloud_download
+          </span>
           <p className="font-body-md text-body-md text-secondary">
             No downloads yet.{' '}
-            <Link to="/" className="text-primary hover:underline">Paste a URL on the home page</Link> to get started.
+            <Link to="/" className="text-primary hover:underline">
+              Paste a URL on the home page
+            </Link>{' '}
+            to get started.
           </p>
         </div>
       ) : (
         <div className="flex flex-col gap-4">
-          {items.map(item =>
+          {items.map((item) =>
             item._expired ? (
               <ExpiredCard key={item.downloadId} download={item} onForget={forgetExpired} />
             ) : (
-              <ActiveCard key={item.downloadId} download={item} apiUrl={apiUrl} onDelete={removeDownload} onKeep={setKept} />
-            )
+              <ActiveCard
+                key={item.downloadId}
+                download={item}
+                apiUrl={apiUrl}
+                onDelete={removeDownload}
+                onKeep={setKept}
+              />
+            ),
           )}
         </div>
       )}

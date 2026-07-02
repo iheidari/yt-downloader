@@ -179,7 +179,9 @@
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .download-btn:hover {
@@ -301,12 +303,19 @@
 
 /* Loading Animation */
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .loading {
@@ -329,6 +338,6 @@
   .thumbnail {
     width: 100%;
     height: auto;
-    aspect-ratio: 16/9;
+    aspect-ratio: 16 / 9;
   }
 }

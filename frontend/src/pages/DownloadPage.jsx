@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
-import { useNavigate, useParams, useLocation } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import ProgressBar from '../components/ProgressBar'
 import { useHistory } from '../context/useHistory'
+import { clearStartParams, fetchDownloads, loadStartParams } from '../lib/media'
 
 const WATCH_POLL_MS = 2000
 const WATCH_TIMEOUT_MS = 5 * 60 * 1000
@@ -12,7 +13,15 @@ function DownloadPage() {
   const navigate = useNavigate()
   const { apiUrl, addDownload } = useHistory()
 
-  const startParams = location.state?.start ? location.state : null
+  // Start params normally arrive via router state, but a reload of /download/:id
+  // wipes that — recover them from sessionStorage (per-tab, written at start)
+  // so the SSE resumes and the "Keep forever" choice isn't silently dropped.
+  const stateStart = location.state?.start ? location.state : null
+  const startParams = useMemo(
+    () => stateStart || loadStartParams(downloadId),
+    [stateStart, downloadId],
+  )
+
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState(null)
 
@@ -24,6 +33,19 @@ function DownloadPage() {
     let eventSource = null
     let pollCancelled = false
     let pollTimer = null
+    // Reconcile against the file list: if the download is present (and not
+    // expired), adopt it and jump to the player. Shared by the SSE onerror
+    // recovery and the no-start-params poll fallback.
+    const resolveIfReady = async () => {
+      const all = await fetchDownloads(apiUrl)
+      if (pollCancelled) return false
+      const found = all.find((d) => d.downloadId === downloadId && !d.expired)
+      if (!found) return false
+      addDownload(found)
+      clearStartParams(downloadId)
+      navigate(`/play/${downloadId}`, { replace: true })
+      return true
+    }
     const startTimer = setTimeout(() => {
       if (startParams) {
         const qs = new URLSearchParams({
@@ -32,11 +54,11 @@ function DownloadPage() {
           type: startParams.type,
           title: startParams.title || '',
           thumbnail: startParams.thumbnail || '',
-          keep: startParams.keep ? 'true' : 'false'
+          keep: startParams.keep ? 'true' : 'false',
         })
 
         eventSource = new EventSource(
-          `${apiUrl}/api/download/progress/${downloadId}?${qs.toString()}`
+          `${apiUrl}/api/download/progress/${downloadId}?${qs.toString()}`,
         )
 
         eventSource.onmessage = (event) => {
@@ -47,34 +69,34 @@ function DownloadPage() {
           } else if (data.type === 'complete') {
             setProgress(100)
             addDownload(data.data)
+            clearStartParams(downloadId)
             eventSource.close()
             navigate(`/play/${downloadId}`, { replace: true })
           } else if (data.type === 'error') {
             setError(data.error || 'Download failed')
+            clearStartParams(downloadId)
             eventSource.close()
           }
         }
 
-        eventSource.onerror = () => {
+        eventSource.onerror = async () => {
           eventSource.close()
-          setError('Download connection lost')
+          // onerror also fires on transient proxy blips / a dropped keep-alive,
+          // even when the download finished server-side. Reconcile against the
+          // file list before declaring failure.
+          try {
+            if (await resolveIfReady()) return
+          } catch {
+            // fall through to the error state
+          }
+          if (!pollCancelled) setError('Download connection lost')
         }
       } else {
         const start = Date.now()
         const poll = async () => {
           if (pollCancelled) return
           try {
-            const response = await fetch(`${apiUrl}/api/files`)
-            const data = await response.json()
-            if (pollCancelled) return
-            if (data.success && Array.isArray(data.data)) {
-              const found = data.data.find(d => d.downloadId === downloadId && !d.expired)
-              if (found) {
-                addDownload(found)
-                navigate(`/play/${downloadId}`, { replace: true })
-                return
-              }
-            }
+            if (await resolveIfReady()) return
             if (Date.now() - start > WATCH_TIMEOUT_MS) {
               setError('Download not found or timed out. It may have failed.')
               return
@@ -103,6 +125,7 @@ function DownloadPage() {
           <span className="material-symbols-outlined text-[40px] text-error mb-2 block">error</span>
           <p className="font-body-md text-body-md text-on-error-container mb-4">{error}</p>
           <button
+            type="button"
             onClick={() => navigate('/')}
             className="bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-primary-container transition-colors"
           >
@@ -121,7 +144,9 @@ function DownloadPage() {
             progress_activity
           </span>
           <p className="font-body-md text-body-md text-secondary">Download in progress…</p>
-          <p className="font-label-sm text-label-sm text-secondary mt-2">Checking back every few seconds.</p>
+          <p className="font-label-sm text-label-sm text-secondary mt-2">
+            Checking back every few seconds.
+          </p>
         </div>
       </div>
     )

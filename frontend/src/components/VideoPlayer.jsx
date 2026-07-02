@@ -1,46 +1,29 @@
-import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useHistory } from '../context/useHistory'
 import { usePlayer } from '../context/usePlayer'
+import { useShareLink } from '../hooks/useShareLink'
+import { fileUrl, formatFileSize, mediaKind } from '../lib/media'
+import BackLink from './BackLink'
 import PlayerStage from './PlayerStage'
 
 function VideoPlayer({ download, apiUrl }) {
   const navigate = useNavigate()
   const { removeDownload } = useHistory()
   const { closePlayer } = usePlayer()
-  const [copied, setCopied] = useState(false)
-
-  const formatFileSize = (bytes) => {
-    if (!bytes) return 'Unknown'
-    const sizes = ['B', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(1024))
-    return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`
-  }
+  const { copied, share } = useShareLink(download.downloadId)
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString(undefined, {
       year: 'numeric',
       month: 'short',
-      day: 'numeric'
+      day: 'numeric',
     })
   }
 
-  const isAudio = /\.(mp3|m4a|ogg|opus|wav|flac)$/i.test(download.filename)
+  const isAudio = mediaKind(download) === 'audio'
   const ext = (download.filename.match(/\.([a-z0-9]+)$/i)?.[1] || '').toUpperCase()
 
-  const encodedFilename = encodeURIComponent(download.filename)
-  const downloadUrl = `${apiUrl}/api/files/${download.downloadId}/${encodedFilename}?action=download`
-
-  const handleShare = async () => {
-    const shareUrl = `${window.location.origin}/play/${download.downloadId}`
-    try {
-      await navigator.clipboard.writeText(shareUrl)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch (err) {
-      console.error('❌ Share copy failed:', err)
-    }
-  }
+  const downloadUrl = fileUrl(apiUrl, download.downloadId, download.filename, { download: true })
 
   const handleDelete = async () => {
     if (!window.confirm('Delete this download? This cannot be undone.')) return
@@ -51,13 +34,7 @@ function VideoPlayer({ download, apiUrl }) {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <Link
-        to="/"
-        className="inline-flex items-center gap-1 text-secondary hover:text-primary font-label-md text-label-md mb-stack-md transition-colors"
-      >
-        <span className="material-symbols-outlined text-[20px]">arrow_back</span>
-        Back
-      </Link>
+      <BackLink />
 
       <div className="space-y-stack-md">
         {/* Player area — hosts the shared, persistent media element. */}
@@ -67,7 +44,10 @@ function VideoPlayer({ download, apiUrl }) {
         <div className="bg-surface p-6 rounded-xl border border-surface-variant">
           <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
             <div className="min-w-0">
-              <h1 className="font-headline-lg text-headline-lg mb-2 break-words" title={download.title}>
+              <h1
+                className="font-headline-lg text-headline-lg mb-2 break-words"
+                title={download.title}
+              >
                 {download.title}
               </h1>
               <p className="text-on-surface-variant flex items-center gap-2 font-body-md text-body-md">
@@ -92,7 +72,8 @@ function VideoPlayer({ download, apiUrl }) {
 
           <div className="grid gap-4 border-t border-surface-variant pt-6 grid-cols-[repeat(auto-fit,minmax(140px,1fr))]">
             <button
-              onClick={handleShare}
+              type="button"
+              onClick={share}
               className="flex items-center justify-center gap-2 bg-primary text-on-primary rounded-lg font-label-md text-label-md hover:bg-primary-container transition-colors active:scale-95 py-4 px-4"
             >
               <span className="material-symbols-outlined">{copied ? 'check' : 'share'}</span>
@@ -131,6 +112,7 @@ function VideoPlayer({ download, apiUrl }) {
             ) : null}
 
             <button
+              type="button"
               onClick={handleDelete}
               className="flex items-center justify-center gap-2 border border-error/30 text-error rounded-lg font-label-md text-label-md hover:bg-error-container/50 transition-colors active:scale-95 py-4 px-4"
             >

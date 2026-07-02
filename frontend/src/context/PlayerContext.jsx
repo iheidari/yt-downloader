@@ -1,19 +1,16 @@
-import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { fileUrl, mediaKind } from '../lib/media'
 import { PlayerContext } from './playerContext.js'
-
-const AUDIO_RE = /\.(mp3|m4a|ogg|opus|wav|flac)$/i
 
 // Build the player's view of a download. `download` comes from history/cold-lookup.
 function toTrack(download, apiUrl) {
-  const encoded = encodeURIComponent(download.filename)
-  const base = `${apiUrl}/api/files/${download.downloadId}/${encoded}`
   return {
     downloadId: download.downloadId,
     title: download.title,
     filename: download.filename,
-    isAudio: AUDIO_RE.test(download.filename),
-    streamUrl: base,
-    downloadUrl: `${base}?action=download`
+    isAudio: mediaKind(download) === 'audio',
+    streamUrl: fileUrl(apiUrl, download.downloadId, download.filename),
+    downloadUrl: fileUrl(apiUrl, download.downloadId, download.filename, { download: true }),
   }
 }
 
@@ -23,9 +20,9 @@ export function PlayerProvider({ children }) {
   // keeps going across route changes. Remounting (what the router does to pages)
   // is exactly what we avoid.
   const mediaRef = useRef(null)
-  const homeRef = useRef(null)   // hidden parking spot when no host is mounted
-  const stageRef = useRef(null)  // full-size slot on the play page
-  const dockRef = useRef(null)   // thumbnail box in the bottom bar
+  const homeRef = useRef(null) // hidden parking spot when no host is mounted
+  const stageRef = useRef(null) // full-size slot on the play page
+  const dockRef = useRef(null) // thumbnail box in the bottom bar
 
   const [current, setCurrent] = useState(null)
   const [stageActive, setStageActive] = useState(false)
@@ -42,16 +39,22 @@ export function PlayerProvider({ children }) {
     if (host && media.parentNode !== host) host.appendChild(media)
   }, [])
 
-  const registerStage = useCallback((el) => {
-    stageRef.current = el
-    setStageActive(!!el)
-    placeMedia()
-  }, [placeMedia])
+  const registerStage = useCallback(
+    (el) => {
+      stageRef.current = el
+      setStageActive(!!el)
+      placeMedia()
+    },
+    [placeMedia],
+  )
 
-  const registerDock = useCallback((el) => {
-    dockRef.current = el
-    placeMedia()
-  }, [placeMedia])
+  const registerDock = useCallback(
+    (el) => {
+      dockRef.current = el
+      placeMedia()
+    },
+    [placeMedia],
+  )
 
   // Native controls only when full-size; the dock drives playback with its own UI.
   // Styling is imperative (one shared element, different shape per host) so React's
@@ -86,7 +89,13 @@ export function PlayerProvider({ children }) {
     const onPause = () => setIsPlaying(false)
     const onTime = () => setCurrentTime(media.currentTime || 0)
     const onMeta = () => setDuration(media.duration || 0)
-    const onError = () => { if (media.currentSrc) setLoadError(true) }
+    // Trust the element's own MediaError: it's set on a real failure (e.g. an
+    // expired file 404ing) and cleared by load() on teardown, so this shows the
+    // friendly "unable to play" stage without false positives — and without
+    // depending on currentSrc, which can be cleared for an expired source.
+    const onError = () => {
+      if (media.error) setLoadError(true)
+    }
     media.addEventListener('play', onPlay)
     media.addEventListener('pause', onPause)
     media.addEventListener('timeupdate', onTime)
@@ -138,26 +147,45 @@ export function PlayerProvider({ children }) {
     if (media && Number.isFinite(time)) media.currentTime = time
   }, [])
 
-  const value = {
-    current,
-    stageActive,
-    isPlaying,
-    currentTime,
-    duration,
-    loadError,
-    playTrack,
-    closePlayer,
-    togglePlay,
-    seek,
-    registerStage,
-    registerDock
-  }
+  // Callbacks are useCallback-stable, so this only re-identifies when the state
+  // values actually change — sibling HistoryContext does the same.
+  const value = useMemo(
+    () => ({
+      current,
+      stageActive,
+      isPlaying,
+      currentTime,
+      duration,
+      loadError,
+      playTrack,
+      closePlayer,
+      togglePlay,
+      seek,
+      registerStage,
+      registerDock,
+    }),
+    [
+      current,
+      stageActive,
+      isPlaying,
+      currentTime,
+      duration,
+      loadError,
+      playTrack,
+      closePlayer,
+      togglePlay,
+      seek,
+      registerStage,
+      registerDock,
+    ],
+  )
 
   return (
     <PlayerContext.Provider value={value}>
       {/* Parking spot: keeps the element in the document (so playback survives)
           whenever neither the stage nor the dock is mounted. */}
       <div ref={homeRef} className="hidden" aria-hidden="true">
+        {/* biome-ignore lint/a11y/useMediaCaption: playing user-downloaded media with no caption track available */}
         <video ref={mediaRef} src={current?.streamUrl || undefined} playsInline />
       </div>
       {children}

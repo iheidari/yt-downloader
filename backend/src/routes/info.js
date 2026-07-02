@@ -1,25 +1,29 @@
 const express = require('express');
 const router = express.Router();
-const { getVideoInfo } = require('../services/ytdlp');
+const { getVideoInfo, isSupportedUrl } = require('../services/ytdlp');
 
 router.get('/', async (req, res) => {
   const { url } = req.query;
 
   if (!url) {
-    return res.status(400).json({ error: 'URL parameter is required' });
+    return res.status(400).json({ success: false, error: 'URL parameter is required' });
+  }
+
+  if (!isSupportedUrl(url)) {
+    return res.status(400).json({ success: false, error: 'A valid http(s) URL is required' });
   }
 
   try {
     const info = await getVideoInfo(url);
     res.json({
       success: true,
-      data: info
+      data: info,
     });
   } catch (error) {
     console.error('Error fetching video info:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });

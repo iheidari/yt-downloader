@@ -1,14 +1,14 @@
-import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  base: '/',  // Serve from root (not subdirectory)
+  base: '/', // Serve from root (not subdirectory)
   build: {
     outDir: 'dist',
-    sourcemap: false,  // No source maps in production
-    target: 'es2020',  // Modern browser support
+    sourcemap: false, // No source maps in production
+    target: 'es2020', // Modern browser support
     rollupOptions: {
       output: {
         manualChunks: (id) => {
@@ -37,11 +37,11 @@ export default defineConfig({
             return 'assets/fonts/[name]-[hash][extname]'
           }
           return 'assets/[name]-[hash][extname]'
-        }
-      }
+        },
+      },
     },
     // Optimize chunk size
-    chunkSizeWarningLimit: 1000
+    chunkSizeWarningLimit: 1000,
   },
   server: {
     port: 5173,
@@ -49,17 +49,17 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3001',
         changeOrigin: true,
-        secure: false
-      }
-    }
+        secure: false,
+      },
+    },
   },
   preview: {
     port: 4173,
     proxy: {
       '/api': {
         target: 'http://localhost:3001',
-        changeOrigin: true
-      }
-    }
-  }
+        changeOrigin: true,
+      },
+    },
+  },
 })

@@ -10,8 +10,8 @@ This is a full-stack YouTube video downloader application with a React frontend 
 │   ├── src/
 │   │   ├── App.jsx
 │   │   └── components/   # React components
-│   ├── package.json
-│   └── eslint.config.js
+│   └── package.json
+├── biome.json         # Biome lint + format config (whole repo)
 ├── backend/           # Express API server (port 3001)
 │   ├── src/
 │   │   ├── server.js
@@ -47,7 +47,8 @@ cd frontend && npm run dev
 cd frontend
 npm run dev       # Start dev server (Vite)
 npm run build     # Production build to dist/
-npm run lint      # Run ESLint
+npm run lint      # Run Biome (biome check .)
+npm run format    # Apply Biome formatting
 npm run preview   # Preview production build
 ```
 
@@ -60,10 +61,14 @@ npm run dev       # Start with nodemon (auto-reload)
 npm run cleanup   # Run cleanup service manually
 ```
 
-### Linting
+### Linting & Formatting
+
+[Biome](https://biomejs.dev) handles both linting and formatting for the whole repo via a single root `biome.json`. Run from the repo root:
 
 ```bash
-cd frontend && npm run lint
+npm run lint      # biome check .  (diagnostics only)
+npm run format    # biome format --write .
+npm run check     # biome check --write .  (safe lint fixes + formatting)
 ```
 
 **Note:** No test framework is currently configured in this project.
@@ -181,13 +186,13 @@ Always return consistent response structure:
 { success: false, error: 'Error message' }
 ```
 
-### ESLint Configuration
+### Biome Configuration
 
-ESLint is configured in `frontend/eslint.config.js` with:
-- `@eslint/js` recommended rules
-- React Hooks recommended rules
-- React Refresh plugin
-- Custom rule: `no-unused-vars` ignores vars starting with uppercase
+Linting and formatting are configured in the root `biome.json`:
+- Biome recommended rules + the `react` domain (React Hooks + Fast Refresh rules)
+- Formatter: 2-space indent, 100 col, single quotes, double-quoted JSX
+- Semicolons: `asNeeded` (frontend, no semicolons) with a `backend/**` override forcing `always`
+- Respects `.gitignore`; unused vars/params prefixed with `_` are ignored
 
 ## Dependencies
 

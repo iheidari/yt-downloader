@@ -17,10 +17,14 @@ cd backend && npm run cleanup  # run cleanup once and exit
 cd frontend && npm run dev     # Vite dev server (port 5173), proxies /api → :3001
 cd frontend && npm run build   # production build to dist/
 cd frontend && npm run preview # preview built dist/ (port 4173), proxies /api → :3001
-cd frontend && npm run lint    # ESLint
+
+# Lint & format (Biome) — run from the repo root, covers both frontend and backend
+npm run lint                   # biome check .  (lint + format diagnostics, no writes)
+npm run format                 # biome format --write .  (apply formatting)
+npm run check                  # biome check --write .  (apply safe lint fixes + formatting)
 ```
 
-No test framework is configured. There is no backend lint script — `npm run lint` exists only in `frontend/`.
+No test framework is configured. Linting/formatting is [Biome](https://biomejs.dev) via a single root `biome.json`; the `frontend/` and `backend/` packages each also expose `npm run lint` / `npm run format` that shell out to the same root-installed Biome.
 
 **Single-server mode:** if `frontend/dist/` exists, `backend` serves it statically with an SPA fallback (see `server.js`). So `cd frontend && npm run build` then `cd backend && npm start` serves the whole app on port 3001 with no separate frontend process. This is how production runs.
 
@@ -60,7 +64,7 @@ Routing-based, **not** a single mega-component (the old `App.jsx`-holds-all-stat
 - **`main.jsx`** — `createBrowserRouter` defines routes; `<HistoryProvider>` wraps the whole router so history state is global.
 - **`App.jsx`** — layout shell only (header/nav + `<Outlet/>`).
 - **`pages/`** — `HomePage` (URL input → navigates to `/info?url=`), `InfoPage` (format selection), `DownloadPage` (`/download/:id`, runs the SSE), `DownloadsPage` (active + expired lists), `PlayPage` (`/play/:id`), `NotFoundPage`.
-- **`context/`** is intentionally split three ways for React Fast Refresh / the `react-refresh/only-export-components` ESLint rule: `historyContext.js` (`createContext` + constants), `HistoryContext.jsx` (the `HistoryProvider` with all logic), `useHistory.js` (the hook). Keep this separation when editing.
+- **`context/`** is intentionally split three ways for React Fast Refresh / Biome's `useComponentExportOnlyModules` rule (the react-refresh equivalent): `historyContext.js` (`createContext` + constants), `HistoryContext.jsx` (the `HistoryProvider` with all logic), `useHistory.js` (the hook). Keep this separation when editing.
 - **`components/`** — `UrlInput`, `FormatSelector`, `ProgressBar`, `VideoPlayer`.
 - **Share links:** `/play/:downloadId` is a stable shareable URL (the Share button copies `window.location.origin/play/:id`). `PlayPage` therefore does a "cold" `GET /api/files` lookup when the download isn't in local context, so a recipient who never downloaded it can still play it.
 - `VITE_API_URL` defaults to `window.location.origin` when unset (works in single-server mode).
@@ -70,7 +74,7 @@ There is **no Tailwind in `package.json`, no `tailwind.config.js`, and no PostCS
 
 ## Code Conventions
 
-**Frontend** — ES modules, **no semicolons**, single quotes, 2-space indent, ~100 col, functional components + hooks only. PascalCase component files; the file name matches the default export. ESLint ignores unused vars starting with an uppercase letter.
+**Frontend** — ES modules, **no semicolons**, single quotes, 2-space indent, ~100 col, functional components + hooks only. PascalCase component files; the file name matches the default export. Biome ignores unused vars/params prefixed with an underscore (`_foo`).
 
 **Backend** — CommonJS (`require`/`module.exports`), **semicolons**, single quotes, 2-space indent, camelCase files.
 

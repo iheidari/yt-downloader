@@ -1,26 +1,14 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { formatDuration, formatFileSize } from '../lib/media'
+import BackLink from './BackLink'
 
 function FormatSelector({ info, onDownload, startingFormat = null }) {
   const [keep, setKeep] = useState(false)
-  const formatFileSize = (bytes) => {
-    if (!bytes) return 'Unknown'
-    const sizes = ['B', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(1024))
-    return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${sizes[i]}`
-  }
-
-  const formatDuration = (seconds) => {
-    if (!seconds && seconds !== 0) return ''
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins}:${secs.toString().padStart(2, '0')}`
-  }
 
   const getHeight = (res) => {
     if (!res) return 0
     const match = res.match(/(\d+)x(\d+)/)
-    return match ? parseInt(match[2]) : 0
+    return match ? parseInt(match[2], 10) : 0
   }
 
   const heightLabel = (res) => {
@@ -42,27 +30,27 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
   // Build a unified video list: pick best format per unique resolution,
   // preferring h264/avc for compatibility and video-only (mergeable) for highest qualities.
   const buildVideoOptions = () => {
-    const videoFormats = (info.formats?.video || []).map(f => ({ ...f, _type: 'video' }))
-    const combinedFormats = (info.formats?.combined || []).map(f => ({ ...f, _type: 'combined' }))
+    const videoFormats = (info.formats?.video || []).map((f) => ({ ...f, _type: 'video' }))
+    const combinedFormats = (info.formats?.combined || []).map((f) => ({ ...f, _type: 'combined' }))
     const all = [...videoFormats, ...combinedFormats]
 
     const sorted = [...all].sort((a, b) => {
-      const aIsH264 = (a.vcodec || '').toLowerCase().match(/avc|h264/) !== null
-      const bIsH264 = (b.vcodec || '').toLowerCase().match(/avc|h264/) !== null
+      const aIsH264 = /avc|h264/i.test(a.vcodec || '')
+      const bIsH264 = /avc|h264/i.test(b.vcodec || '')
       if (aIsH264 && !bIsH264) return -1
       if (!aIsH264 && bIsH264) return 1
       return getHeight(b.resolution) - getHeight(a.resolution)
     })
 
     const seen = new Map()
-    sorted.forEach(format => {
+    sorted.forEach((format) => {
       const res = format.resolution
       if (!res || res === 'audio only') return
       if (!seen.has(res)) seen.set(res, format)
     })
 
     return Array.from(seen.values()).sort(
-      (a, b) => getHeight(b.resolution) - getHeight(a.resolution)
+      (a, b) => getHeight(b.resolution) - getHeight(a.resolution),
     )
   }
 
@@ -72,7 +60,7 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
     const seen = new Map()
     ;[...audio]
       .sort((a, b) => (b.abr || 0) - (a.abr || 0))
-      .forEach(f => {
+      .forEach((f) => {
         const key = Math.round(f.abr || 0)
         if (!seen.has(key)) seen.set(key, f)
       })
@@ -94,13 +82,7 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <Link
-        to="/"
-        className="inline-flex items-center gap-1 text-secondary hover:text-primary font-label-md text-label-md mb-stack-md transition-colors"
-      >
-        <span className="material-symbols-outlined text-[20px]">arrow_back</span>
-        Back
-      </Link>
+      <BackLink />
 
       {/* Video Header Section */}
       <section className="mb-stack-lg">
@@ -203,6 +185,7 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
                       </div>
                     </div>
                     <button
+                      type="button"
                       onClick={() => onDownload(format.formatId, format._type, keep)}
                       disabled={startingFormat !== null}
                       className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md text-label-md active:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
@@ -254,7 +237,8 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
                       </div>
                       <div className="min-w-0">
                         <p className="font-label-md text-label-md text-on-surface truncate">
-                          {isBest ? 'High Quality' : 'Standard'} • {(format.ext || 'm4a').toUpperCase()}
+                          {isBest ? 'High Quality' : 'Standard'} •{' '}
+                          {(format.ext || 'm4a').toUpperCase()}
                         </p>
                         <p className="text-label-sm text-secondary">
                           Size: {formatFileSize(format.filesize)}
@@ -263,6 +247,7 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
                       </div>
                     </div>
                     <button
+                      type="button"
                       onClick={() => onDownload(format.formatId, 'audio', keep)}
                       disabled={startingFormat !== null}
                       className="flex items-center gap-2 border border-primary text-primary px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-primary/5 active:opacity-80 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"

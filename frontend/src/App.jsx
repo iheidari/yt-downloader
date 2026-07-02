@@ -21,8 +21,20 @@ function App() {
             <Link to="/" className="flex items-center gap-2 no-underline">
               <svg viewBox="0 0 50 50" fill="none" className="w-8 h-8 shrink-0" aria-hidden="true">
                 <rect x="18" y="18" width="14" height="14" fill="#D9A441" />
-                <path d="M4 16 L4 4 L16 4" stroke="currentColor" strokeWidth="5" strokeLinecap="square" className="text-on-surface" />
-                <path d="M46 34 L46 46 L34 46" stroke="currentColor" strokeWidth="5" strokeLinecap="square" className="text-on-surface" />
+                <path
+                  d="M4 16 L4 4 L16 4"
+                  stroke="currentColor"
+                  strokeWidth="5"
+                  strokeLinecap="square"
+                  className="text-on-surface"
+                />
+                <path
+                  d="M46 34 L46 46 L34 46"
+                  stroke="currentColor"
+                  strokeWidth="5"
+                  strokeLinecap="square"
+                  className="text-on-surface"
+                />
               </svg>
               <h1 className="text-headline-md font-headline-md text-primary tracking-tight">
                 Tubekeep

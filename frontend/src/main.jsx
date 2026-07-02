@@ -5,12 +5,12 @@ import './index.css'
 import App from './App.jsx'
 import { HistoryProvider } from './context/HistoryContext.jsx'
 import { PlayerProvider } from './context/PlayerContext.jsx'
-import HomePage from './pages/HomePage.jsx'
-import InfoPage from './pages/InfoPage.jsx'
 import DownloadPage from './pages/DownloadPage.jsx'
 import DownloadsPage from './pages/DownloadsPage.jsx'
-import PlayPage from './pages/PlayPage.jsx'
+import HomePage from './pages/HomePage.jsx'
+import InfoPage from './pages/InfoPage.jsx'
 import NotFoundPage from './pages/NotFoundPage.jsx'
+import PlayPage from './pages/PlayPage.jsx'
 
 const router = createBrowserRouter([
   {
@@ -22,9 +22,9 @@ const router = createBrowserRouter([
       { path: 'info', element: <InfoPage /> },
       { path: 'download/:downloadId', element: <DownloadPage /> },
       { path: 'play/:downloadId', element: <PlayPage /> },
-      { path: '*', element: <NotFoundPage /> }
-    ]
-  }
+      { path: '*', element: <NotFoundPage /> },
+    ],
+  },
 ])
 
 createRoot(document.getElementById('root')).render(
@@ -34,5 +34,5 @@ createRoot(document.getElementById('root')).render(
         <RouterProvider router={router} />
       </PlayerProvider>
     </HistoryProvider>
-  </StrictMode>
+  </StrictMode>,
 )

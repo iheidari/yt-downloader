@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams, Navigate, Link } from 'react-router-dom'
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
+import BackLink from '../components/BackLink'
 import FormatSelector from '../components/FormatSelector'
 import { useHistory } from '../context/useHistory'
+import { saveStartParams } from '../lib/media'
 
 function InfoPage() {
   const [searchParams] = useSearchParams()
@@ -22,13 +24,13 @@ function InfoPage() {
     setInfo(null)
 
     fetch(`${apiUrl}/api/info?url=${encodeURIComponent(url)}`)
-      .then(r => r.json())
-      .then(data => {
+      .then((r) => r.json())
+      .then((data) => {
         if (cancelled) return
         if (!data.success) throw new Error(data.error)
         setInfo({ ...data.data, originalUrl: url })
       })
-      .catch(err => {
+      .catch((err) => {
         if (cancelled) return
         setError(err.message || 'Failed to fetch video info')
       })
@@ -36,7 +38,9 @@ function InfoPage() {
         if (!cancelled) setLoading(false)
       })
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [url, apiUrl])
 
   if (!url) return <Navigate to="/" replace />
@@ -48,45 +52,32 @@ function InfoPage() {
       const response = await fetch(`${apiUrl}/api/download`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: info.originalUrl,
-          formatId,
-          type,
-          title: info.title,
-          thumbnail: info.thumbnail
-        })
+        body: JSON.stringify({ url: info.originalUrl, formatId, type }),
       })
       const data = await response.json()
       if (!data.success) throw new Error(data.error)
 
       const { downloadId } = data.data
-      navigate(`/download/${downloadId}`, {
-        replace: true,
-        state: {
-          start: true,
-          url: info.originalUrl,
-          formatId,
-          type,
-          title: info.title,
-          thumbnail: info.thumbnail,
-          keep
-        }
-      })
+      const startState = {
+        start: true,
+        url: info.originalUrl,
+        formatId,
+        type,
+        title: info.title,
+        thumbnail: info.thumbnail,
+        keep,
+      }
+      // Persist per-tab so a reload of the download page can resume the SSE
+      // (and keep the "Keep forever" choice) instead of losing router state.
+      saveStartParams(downloadId, startState)
+      navigate(`/download/${downloadId}`, { replace: true, state: startState })
     } catch (err) {
       setError(err.message || 'Failed to start download')
       setStartingFormat(null)
     }
   }
 
-  const backLink = (
-    <Link
-      to="/"
-      className="inline-flex items-center gap-1 text-secondary hover:text-primary font-label-md text-label-md mb-stack-md transition-colors"
-    >
-      <span className="material-symbols-outlined text-[20px]">arrow_back</span>
-      Back
-    </Link>
-  )
+  const backLink = <BackLink />
 
   if (loading) {
     return (
@@ -110,6 +101,7 @@ function InfoPage() {
           <span className="material-symbols-outlined text-[40px] text-error mb-2 block">error</span>
           <p className="font-body-md text-body-md text-on-error-container mb-4">{error}</p>
           <button
+            type="button"
             onClick={() => navigate('/')}
             className="bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-primary-container transition-colors"
           >
@@ -122,13 +114,7 @@ function InfoPage() {
 
   if (!info) return null
 
-  return (
-    <FormatSelector
-      info={info}
-      onDownload={handleDownload}
-      startingFormat={startingFormat}
-    />
-  )
+  return <FormatSelector info={info} onDownload={handleDownload} startingFormat={startingFormat} />
 }
 
 export default InfoPage

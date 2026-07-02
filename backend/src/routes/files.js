@@ -1,43 +1,45 @@
 const express = require('express');
 const router = express.Router();
-const path = require('path');
-const fs = require('fs');
+const path = require('node:path');
+const fs = require('node:fs');
 const {
   listDownloads,
   getDownloadFilePath,
   deleteDownload,
   expireDownload,
   setKept,
-  downloadsDir
 } = require('../utils/storage');
 
 // RFC 5987 encoding for unicode filenames in Content-Disposition header
 function encodeRFC5987(filename) {
-  // Encode non-ASCII characters according to RFC 5987
-  return encodeURIComponent(filename)
-    .replace(/['()]/g, escape)
-    .replace(/%(?![0-9A-Fa-f]{2})/g, '%25');
+  // encodeURIComponent leaves !'()* untouched, but RFC 5987 attr-char forbids
+  // them — percent-encode the ones it misses. (Avoids the deprecated `escape`.)
+  return encodeURIComponent(filename).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
 }
 
 function getContentDisposition(filename, isDownload) {
   const dispositionType = isDownload ? 'attachment' : 'inline';
   // Use both filename (for compatibility) and filename* (for unicode)
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: intentionally strips all non-ASCII (incl. control chars) for the ASCII filename fallback
   const asciiFilename = filename.replace(/[^\x00-\x7F]/g, '_');
   const encodedFilename = encodeRFC5987(filename);
   return `${dispositionType}; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`;
 }
 
-router.get('/', (req, res) => {
+router.get('/', (_req, res) => {
   try {
     const downloads = listDownloads();
     res.json({
       success: true,
-      data: downloads
+      data: downloads,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -51,18 +53,27 @@ router.get('/:downloadId/:filename', (req, res) => {
   if (!filePath) {
     return res.status(404).json({
       success: false,
-      error: 'File not found'
+      error: 'File not found',
     });
   }
 
-  const stat = fs.statSync(filePath);
-  const range = req.headers.range;
+  let stat;
+  try {
+    // The file can vanish between the existence check and here (hourly cleanup
+    // or a concurrent DELETE), so stat defensively → clean 404, never a raw 500.
+    stat = fs.statSync(filePath);
+  } catch {
+    return res.status(404).json({ success: false, error: 'File not found' });
+  }
 
   // Decode URL-encoded filename
   const decodedFilename = decodeURIComponent(filename);
-  
+
   // Set Content-Disposition with proper unicode handling
-  res.setHeader('Content-Disposition', getContentDisposition(decodedFilename, action === 'download'));
+  res.setHeader(
+    'Content-Disposition',
+    getContentDisposition(decodedFilename, action === 'download'),
+  );
 
   const ext = path.extname(filename).toLowerCase();
   const mimeTypes = {
@@ -75,16 +86,49 @@ router.get('/:downloadId/:filename', (req, res) => {
     '.ogg': 'audio/ogg',
     '.opus': 'audio/opus',
     '.srt': 'text/plain',
-    '.vtt': 'text/vtt'
+    '.vtt': 'text/vtt',
   };
 
   res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
   res.setHeader('Accept-Ranges', 'bytes');
 
+  // A read error mid-stream (file deleted, disk issue) must not crash the
+  // process on an unhandled 'error' event.
+  const onStreamError = (err) => {
+    console.error(`❌ File stream error: ${err.message}`);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: 'Failed to read file' });
+    } else {
+      res.destroy(err);
+    }
+  };
+
+  const range = req.headers.range;
+
   if (range) {
-    const parts = range.replace(/bytes=/, '').split('-');
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+    if (!match || (match[1] === '' && match[2] === '')) {
+      res.setHeader('Content-Range', `bytes */${stat.size}`);
+      return res.status(416).end();
+    }
+
+    let start;
+    let end;
+    if (match[1] === '') {
+      // Suffix range: bytes=-N → last N bytes.
+      const suffix = parseInt(match[2], 10);
+      start = Math.max(0, stat.size - suffix);
+      end = stat.size - 1;
+    } else {
+      start = parseInt(match[1], 10);
+      end = match[2] === '' ? stat.size - 1 : parseInt(match[2], 10);
+    }
+
+    if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= stat.size) {
+      res.setHeader('Content-Range', `bytes */${stat.size}`);
+      return res.status(416).end();
+    }
+    end = Math.min(end, stat.size - 1);
     const chunksize = end - start + 1;
 
     res.status(206);
@@ -92,10 +136,12 @@ router.get('/:downloadId/:filename', (req, res) => {
     res.setHeader('Content-Length', chunksize);
 
     const stream = fs.createReadStream(filePath, { start, end });
+    stream.on('error', onStreamError);
     stream.pipe(res);
   } else {
     res.setHeader('Content-Length', stat.size);
     const stream = fs.createReadStream(filePath);
+    stream.on('error', onStreamError);
     stream.pipe(res);
   }
 });
@@ -109,18 +155,18 @@ router.patch('/:downloadId', (req, res) => {
     if (ok) {
       res.json({
         success: true,
-        data: { downloadId, kept }
+        data: { downloadId, kept },
       });
     } else {
       res.status(404).json({
         success: false,
-        error: 'Download not found'
+        error: 'Download not found',
       });
     }
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -134,18 +180,18 @@ router.delete('/:downloadId', (req, res) => {
     if (ok) {
       res.json({
         success: true,
-        message: permanent ? 'Download deleted permanently' : 'Download expired'
+        message: permanent ? 'Download deleted permanently' : 'Download expired',
       });
     } else {
       res.status(404).json({
         success: false,
-        error: 'Download not found'
+        error: 'Download not found',
       });
     }
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });

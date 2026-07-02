@@ -1,23 +1,28 @@
 const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
-const { downloadVideo, downloadAudio, downloadSubtitle } = require('../services/ytdlp');
+const { downloadVideo, downloadAudio, isSupportedUrl } = require('../services/ytdlp');
 const { saveDownloadMetadata } = require('../utils/storage');
 
-const activeDownloads = new Map();
-
 router.post('/', async (req, res) => {
-  const { url, formatId, type, title, thumbnail } = req.body;
+  const { url, formatId, type } = req.body;
 
   if (!url || !formatId) {
     return res.status(400).json({
       success: false,
-      error: 'URL and formatId are required'
+      error: 'URL and formatId are required',
+    });
+  }
+
+  if (!isSupportedUrl(url)) {
+    return res.status(400).json({
+      success: false,
+      error: 'A valid http(s) URL is required',
     });
   }
 
   const downloadId = uuidv4();
-  
+
   res.json({
     success: true,
     data: {
@@ -25,8 +30,8 @@ router.post('/', async (req, res) => {
       url,
       formatId,
       type: type || 'video',
-      status: 'started'
-    }
+      status: 'started',
+    },
   });
 });
 
@@ -37,7 +42,14 @@ router.get('/progress/:downloadId', async (req, res) => {
   if (!url || !formatId) {
     return res.status(400).json({
       success: false,
-      error: 'URL and formatId are required'
+      error: 'URL and formatId are required',
+    });
+  }
+
+  if (!isSupportedUrl(url)) {
+    return res.status(400).json({
+      success: false,
+      error: 'A valid http(s) URL is required',
     });
   }
 
@@ -48,17 +60,30 @@ router.get('/progress/:downloadId', async (req, res) => {
   res.flushHeaders();
 
   const sendEvent = (data) => {
+    if (res.writableEnded) return;
     res.write(`data: ${JSON.stringify(data)}\n\n`);
     if (typeof res.flush === 'function') res.flush();
   };
 
   let result;
   let progress = 0;
+  let finished = false;
 
   // Heartbeat to prevent proxy timeout (every 15 seconds)
   const heartbeatInterval = setInterval(() => {
     sendEvent({ type: 'ping', downloadId, progress });
   }, 15000);
+
+  // If the client navigates away / closes the tab, stop wasting a yt-dlp
+  // subprocess (and the heartbeat) on a dead connection.
+  const abortController = new AbortController();
+  req.on('close', () => {
+    if (finished) return;
+    finished = true;
+    clearInterval(heartbeatInterval);
+    abortController.abort();
+    console.log(`⚠️  Client disconnected — aborting download ${downloadId}`);
+  });
 
   try {
     sendEvent({ type: 'started', downloadId, progress: 0 });
@@ -68,14 +93,15 @@ router.get('/progress/:downloadId', async (req, res) => {
       sendEvent({ type: 'progress', downloadId, progress });
     };
 
+    const { signal } = abortController;
     if (type === 'audio') {
-      result = await downloadAudio(url, formatId, downloadId, onProgress);
+      result = await downloadAudio(url, formatId, downloadId, onProgress, signal);
     } else if (type === 'video') {
       // Video-only format - will be merged with best audio
-      result = await downloadVideo(url, formatId, downloadId, onProgress, true);
+      result = await downloadVideo(url, formatId, downloadId, onProgress, true, signal);
     } else {
       // Combined format
-      result = await downloadVideo(url, formatId, downloadId, onProgress, false);
+      result = await downloadVideo(url, formatId, downloadId, onProgress, false, signal);
     }
 
     const metadata = {
@@ -88,8 +114,12 @@ router.get('/progress/:downloadId', async (req, res) => {
       size: result.size,
       kept: keep === 'true',
       createdAt: new Date().toISOString(),
-      downloadId
+      downloadId,
     };
+
+    // Client already gone (aborted mid-download): don't persist or emit.
+    if (finished) return;
+    finished = true;
 
     saveDownloadMetadata(downloadId, metadata);
 
@@ -99,19 +129,22 @@ router.get('/progress/:downloadId', async (req, res) => {
       progress: 100,
       data: {
         ...metadata,
-        fileUrl: `/api/files/${downloadId}/${encodeURIComponent(result.filename)}`
-      }
+        fileUrl: `/api/files/${downloadId}/${encodeURIComponent(result.filename)}`,
+      },
     });
 
     clearInterval(heartbeatInterval);
     res.end();
   } catch (error) {
-    console.error('Download error:', error);
     clearInterval(heartbeatInterval);
+    // Swallow errors caused by our own abort-on-disconnect.
+    if (finished) return;
+    finished = true;
+    console.error('❌ Download error:', error);
     sendEvent({
       type: 'error',
       downloadId,
-      error: error.message
+      error: error.message,
     });
     res.end();
   }

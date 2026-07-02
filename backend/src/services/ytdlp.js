@@ -1,9 +1,9 @@
-const { spawn } = require('child_process');
-const path = require('path');
-const fs = require('fs');
-const { v4: uuidv4 } = require('uuid');
+const { spawn } = require('node:child_process');
+const path = require('node:path');
+const fs = require('node:fs');
+const { ensureDownloadDir, deleteDownload } = require('../utils/storage');
 
-const downloadsDir = path.join(__dirname, '../../downloads');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Use the updated yt-dlp binary from ~/.local/bin if available, else fall back to system
 const homeBin = path.join(process.env.HOME || '', '.local', 'bin');
@@ -14,7 +14,7 @@ const ytDlpBin = fs.existsSync(localYtDlp) ? localYtDlp : 'yt-dlp';
 const nodeDir = path.dirname(process.execPath);
 const ytDlpEnv = {
   ...process.env,
-  PATH: [nodeDir, homeBin, process.env.PATH].filter(Boolean).join(':')
+  PATH: [nodeDir, homeBin, process.env.PATH].filter(Boolean).join(':'),
 };
 
 console.log(`🔧 Using yt-dlp binary: ${ytDlpBin}`);
@@ -28,12 +28,26 @@ console.log(`🔧 Node.js for yt-dlp: ${process.execPath}`);
 // Namespaced under `youtube:` so other extractors are unaffected.
 const YOUTUBE_EXTRACTOR_ARGS = 'youtube:player_client=android_vr;formats=missing_pot';
 
+// The URL is forwarded verbatim to `yt-dlp <url>`. yt-dlp's generic extractor
+// happily accepts file:// (local read) and internal http hosts (SSRF pivot),
+// so only allow real http(s) URLs before anything is spawned.
+function isSupportedUrl(value) {
+  if (typeof value !== 'string') return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function runYtDlp(args, options = {}) {
   return new Promise((resolve, reject) => {
     const ytDlp = spawn(ytDlpBin, args, {
       timeout: options.timeout || 120000,
       env: ytDlpEnv,
-      ...options.spawnOptions
+      signal: options.signal,
+      ...options.spawnOptions,
     });
 
     let stdout = '';
@@ -43,7 +57,7 @@ function runYtDlp(args, options = {}) {
       stdout += data.toString();
       if (options.onProgress) {
         const lines = data.toString().split('\n');
-        lines.forEach(line => {
+        lines.forEach((line) => {
           if (line.includes('%')) {
             options.onProgress(line);
           }
@@ -71,11 +85,12 @@ function runYtDlp(args, options = {}) {
 
 async function fetchYouTubeInfo(url) {
   const { stdout } = await runYtDlp([
-    '--extractor-args', YOUTUBE_EXTRACTOR_ARGS,
+    '--extractor-args',
+    YOUTUBE_EXTRACTOR_ARGS,
     '--dump-json',
     '--no-download',
     '--no-playlist',
-    url
+    url,
   ]);
   return JSON.parse(stdout);
 }
@@ -85,25 +100,21 @@ async function getVideoInfo(url) {
     // YouTube's android_vr client is the only one currently bypassing the broken
     // JS-challenge solver, but YouTube's per-session SABR experiment intermittently
     // strips video URLs. Retry with a small back-off until the full ladder appears.
-    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     let info = await fetchYouTubeInfo(url);
     const videoOnlyCount = (i) =>
-      i.formats.filter(f => f.vcodec !== 'none' && f.acodec === 'none').length;
+      i.formats.filter((f) => f.vcodec !== 'none' && f.acodec === 'none').length;
 
     for (let attempt = 1; attempt <= 4 && videoOnlyCount(info) === 0; attempt++) {
-      console.log(`⚠️  No video-only formats on attempt ${attempt}, retrying after ${attempt * 500}ms…`);
+      console.log(
+        `⚠️  No video-only formats on attempt ${attempt}, retrying after ${attempt * 500}ms…`,
+      );
       await sleep(attempt * 500);
       info = await fetchYouTubeInfo(url);
     }
 
-    console.log(`📊 yt-dlp returned ${info.formats.length} total formats for: ${info.title}`);
-    console.log(`   Video-only: ${info.formats.filter(f => f.vcodec !== 'none' && f.acodec === 'none').length}`);
-    console.log(`   Audio-only: ${info.formats.filter(f => f.acodec !== 'none' && f.vcodec === 'none').length}`);
-    console.log(`   Combined: ${info.formats.filter(f => f.vcodec !== 'none' && f.acodec !== 'none').length}`);
-
     const videoFormats = info.formats
-      .filter(f => f.vcodec !== 'none' && f.acodec === 'none')
-      .map(f => ({
+      .filter((f) => f.vcodec !== 'none' && f.acodec === 'none')
+      .map((f) => ({
         formatId: f.format_id,
         ext: f.ext,
         resolution: f.resolution,
@@ -111,24 +122,24 @@ async function getVideoInfo(url) {
         vcodec: f.vcodec,
         fps: f.fps,
         quality: f.quality,
-        formatNote: f.format_note
+        formatNote: f.format_note,
       }));
 
     const audioFormats = info.formats
-      .filter(f => f.acodec !== 'none' && f.vcodec === 'none')
-      .map(f => ({
+      .filter((f) => f.acodec !== 'none' && f.vcodec === 'none')
+      .map((f) => ({
         formatId: f.format_id,
         ext: f.ext,
         filesize: f.filesize || f.filesize_approx,
         acodec: f.acodec,
         abr: f.abr,
         asr: f.asr,
-        audioChannels: f.audio_channels
+        audioChannels: f.audio_channels,
       }));
 
     const combinedFormats = info.formats
-      .filter(f => f.vcodec !== 'none' && f.acodec !== 'none')
-      .map(f => ({
+      .filter((f) => f.vcodec !== 'none' && f.acodec !== 'none')
+      .map((f) => ({
         formatId: f.format_id,
         ext: f.ext,
         resolution: f.resolution,
@@ -137,15 +148,20 @@ async function getVideoInfo(url) {
         acodec: f.acodec,
         fps: f.fps,
         quality: f.quality,
-        formatNote: f.format_note
+        formatNote: f.format_note,
       }));
+
+    console.log(`📊 yt-dlp returned ${info.formats.length} total formats for: ${info.title}`);
+    console.log(`   Video-only: ${videoFormats.length}`);
+    console.log(`   Audio-only: ${audioFormats.length}`);
+    console.log(`   Combined: ${combinedFormats.length}`);
 
     const subtitles = {};
     if (info.subtitles) {
       Object.entries(info.subtitles).forEach(([lang, formats]) => {
-        subtitles[lang] = formats.map(f => ({
+        subtitles[lang] = formats.map((f) => ({
           url: f.url,
-          ext: f.ext
+          ext: f.ext,
         }));
       });
     }
@@ -162,23 +178,86 @@ async function getVideoInfo(url) {
       formats: {
         video: videoFormats,
         audio: audioFormats,
-        combined: combinedFormats
+        combined: combinedFormats,
       },
       subtitles,
-      chapters: info.chapters || []
+      chapters: info.chapters || [],
     };
   } catch (error) {
     throw new Error(`Failed to get video info: ${error.message}`);
   }
 }
 
-async function downloadVideo(url, formatId, downloadId, onProgress, mergeWithAudio = false) {
-  const downloadPath = path.join(downloadsDir, downloadId);
-  
-  if (!fs.existsSync(downloadPath)) {
-    fs.mkdirSync(downloadPath, { recursive: true });
+// yt-dlp writes into an otherwise-empty per-download dir; locate the produced
+// media file by extension and describe it for the routes/storage layer.
+function describeDownloadedFile(downloadPath, downloadId, extensions, notFoundMessage) {
+  const files = fs.readdirSync(downloadPath);
+  // Pick the LARGEST matching file, not the first: a partial SABR retry can
+  // leave intermediate .webm/.m4a fragments next to the final merged .mp4, and
+  // the merged output is always the biggest — serving a fragment breaks playback.
+  const largest = files
+    .filter((f) => extensions.some((ext) => f.toLowerCase().endsWith(ext)))
+    .map((f) => {
+      try {
+        return { f, stat: fs.statSync(path.join(downloadPath, f)) };
+      } catch {
+        return { f, stat: null };
+      }
+    })
+    .sort((a, b) => (b.stat?.size || 0) - (a.stat?.size || 0))[0];
+
+  if (!largest?.stat) {
+    throw new Error(notFoundMessage);
   }
 
+  const { f: filename, stat } = largest;
+
+  return {
+    downloadId,
+    filename,
+    path: path.join(downloadPath, filename),
+    size: stat.size,
+    createdAt: stat.birthtime,
+    relativePath: path.join(downloadId, filename),
+  };
+}
+
+// Run a download, retrying the transient SABR/format failures YouTube throws
+// mid-session. `label` only tags the retry log line ("Video"/"Audio").
+async function runDownloadWithRetry(args, onProgress, label, signal) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (signal?.aborted) throw new Error('Download aborted');
+    try {
+      await runYtDlp(args, {
+        signal,
+        onProgress: (line) => {
+          const match = line.match(/(\d+\.?\d*)%/);
+          if (match && onProgress) {
+            onProgress(parseFloat(match[1]));
+          }
+        },
+      });
+      return;
+    } catch (err) {
+      const retriable = /Requested format is not available|SABR|missing a URL/i.test(err.message);
+      if (!retriable || attempt === 3) throw err;
+      console.log(
+        `⚠️  ${label} download attempt ${attempt} failed (${err.message.split('\n')[0]}), retrying after ${attempt * 750}ms…`,
+      );
+      await sleep(attempt * 750);
+    }
+  }
+}
+
+async function downloadVideo(
+  url,
+  formatId,
+  downloadId,
+  onProgress,
+  mergeWithAudio = false,
+  signal,
+) {
+  const downloadPath = ensureDownloadDir(downloadId);
   const outputTemplate = path.join(downloadPath, '%(title)s.%(ext)s');
 
   try {
@@ -190,12 +269,15 @@ async function downloadVideo(url, formatId, downloadId, onProgress, mergeWithAud
       : `${formatId}/best`;
 
     const args = [
-      '--extractor-args', YOUTUBE_EXTRACTOR_ARGS,
-      '-f', formatString,
-      '-o', outputTemplate,
+      '--extractor-args',
+      YOUTUBE_EXTRACTOR_ARGS,
+      '-f',
+      formatString,
+      '-o',
+      outputTemplate,
       '--newline',
       '--progress',
-      '--no-playlist'
+      '--no-playlist',
     ];
 
     // Add merge output format for video+audio combinations
@@ -205,172 +287,56 @@ async function downloadVideo(url, formatId, downloadId, onProgress, mergeWithAud
 
     args.push(url);
 
-    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-    let lastError;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        await runYtDlp(args, {
-          onProgress: (line) => {
-            const match = line.match(/(\d+\.?\d*)%/);
-            if (match && onProgress) {
-              onProgress(parseFloat(match[1]));
-            }
-          }
-        });
-        lastError = null;
-        break;
-      } catch (err) {
-        lastError = err;
-        const retriable = /Requested format is not available|SABR|missing a URL/i.test(err.message);
-        if (!retriable || attempt === 3) throw err;
-        console.log(`⚠️  Video download attempt ${attempt} failed (${err.message.split('\n')[0]}), retrying after ${attempt * 750}ms…`);
-        await sleep(attempt * 750);
-      }
-    }
-    if (lastError) throw lastError;
+    await runDownloadWithRetry(args, onProgress, 'Video', signal);
 
-    const files = fs.readdirSync(downloadPath);
-    const videoFile = files.find(f => 
-      ['.mp4', '.webm', '.mkv', '.mov'].some(ext => f.endsWith(ext))
-    );
-
-    if (!videoFile) {
-      throw new Error('Downloaded file not found');
-    }
-
-    const stats = fs.statSync(path.join(downloadPath, videoFile));
-
-    return {
+    return describeDownloadedFile(
+      downloadPath,
       downloadId,
-      filename: videoFile,
-      path: path.join(downloadPath, videoFile),
-      size: stats.size,
-      createdAt: stats.birthtime,
-      relativePath: path.join(downloadId, videoFile)
-    };
+      ['.mp4', '.webm', '.mkv', '.mov'],
+      'Downloaded file not found',
+    );
   } catch (error) {
-    if (fs.existsSync(downloadPath)) {
-      fs.rmSync(downloadPath, { recursive: true, force: true });
-    }
+    deleteDownload(downloadId);
     throw error;
   }
 }
 
-async function downloadAudio(url, formatId, downloadId, onProgress) {
-  const downloadPath = path.join(downloadsDir, downloadId);
-
-  if (!fs.existsSync(downloadPath)) {
-    fs.mkdirSync(downloadPath, { recursive: true });
-  }
-
+async function downloadAudio(url, formatId, downloadId, onProgress, signal) {
+  const downloadPath = ensureDownloadDir(downloadId);
   const outputTemplate = path.join(downloadPath, '%(title)s.%(ext)s');
 
   // YouTube's SABR experiment can strip the URL from the exact format ID we
   // surfaced at info-fetch time. Fall back through bestaudio variants so the
   // download succeeds with whatever audio yt-dlp can actually pull this session.
   const formatString = `${formatId}/bestaudio[ext=m4a]/bestaudio/best`;
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   try {
-    let lastError;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        await runYtDlp([
-          '--extractor-args', YOUTUBE_EXTRACTOR_ARGS,
-          '-f', formatString,
-          '-o', outputTemplate,
-          '--newline',
-          '--progress',
-          '--no-playlist',
-          url
-        ], {
-          onProgress: (line) => {
-            const match = line.match(/(\d+\.?\d*)%/);
-            if (match && onProgress) {
-              onProgress(parseFloat(match[1]));
-            }
-          }
-        });
-        lastError = null;
-        break;
-      } catch (err) {
-        lastError = err;
-        const retriable = /Requested format is not available|SABR|missing a URL/i.test(err.message);
-        if (!retriable || attempt === 3) throw err;
-        console.log(`⚠️  Audio download attempt ${attempt} failed (${err.message.split('\n')[0]}), retrying after ${attempt * 750}ms…`);
-        await sleep(attempt * 750);
-      }
-    }
-    if (lastError) throw lastError;
-
-    const files = fs.readdirSync(downloadPath);
-    const audioFile = files.find(f =>
-      ['.mp3', '.m4a', '.webm', '.ogg', '.opus', '.wav', '.flac'].some(ext => f.toLowerCase().endsWith(ext))
+    await runDownloadWithRetry(
+      [
+        '--extractor-args',
+        YOUTUBE_EXTRACTOR_ARGS,
+        '-f',
+        formatString,
+        '-o',
+        outputTemplate,
+        '--newline',
+        '--progress',
+        '--no-playlist',
+        url,
+      ],
+      onProgress,
+      'Audio',
+      signal,
     );
 
-    if (!audioFile) {
-      throw new Error('Downloaded audio file not found');
-    }
-
-    const stats = fs.statSync(path.join(downloadPath, audioFile));
-
-    return {
+    return describeDownloadedFile(
+      downloadPath,
       downloadId,
-      filename: audioFile,
-      path: path.join(downloadPath, audioFile),
-      size: stats.size,
-      createdAt: stats.birthtime,
-      relativePath: path.join(downloadId, audioFile)
-    };
-  } catch (error) {
-    if (fs.existsSync(downloadPath)) {
-      fs.rmSync(downloadPath, { recursive: true, force: true });
-    }
-    throw error;
-  }
-}
-
-async function downloadSubtitle(url, lang, ext, downloadId) {
-  const downloadPath = path.join(downloadsDir, downloadId);
-  
-  if (!fs.existsSync(downloadPath)) {
-    fs.mkdirSync(downloadPath, { recursive: true });
-  }
-
-  const outputTemplate = path.join(downloadPath, '%(title)s');
-
-  try {
-    await runYtDlp([
-      '--extractor-args', YOUTUBE_EXTRACTOR_ARGS,
-      '--write-sub',
-      '--sub-langs', lang,
-      '--convert-subs', ext || 'srt',
-      '--skip-download',
-      '-o', outputTemplate,
-      '--no-playlist',
-      url
-    ]);
-
-    const files = fs.readdirSync(downloadPath);
-    const subtitleFile = files.find(f => 
-      f.includes(lang) && ['.srt', '.vtt', '.ass'].some(e => f.endsWith(e))
+      ['.mp3', '.m4a', '.webm', '.ogg', '.opus', '.wav', '.flac'],
+      'Downloaded audio file not found',
     );
-
-    if (!subtitleFile) {
-      throw new Error('Subtitle file not found');
-    }
-
-    const stats = fs.statSync(path.join(downloadPath, subtitleFile));
-
-    return {
-      downloadId,
-      filename: subtitleFile,
-      path: path.join(downloadPath, subtitleFile),
-      size: stats.size,
-      createdAt: stats.birthtime,
-      relativePath: path.join(downloadId, subtitleFile)
-    };
   } catch (error) {
+    deleteDownload(downloadId);
     throw error;
   }
 }
@@ -379,6 +345,5 @@ module.exports = {
   getVideoInfo,
   downloadVideo,
   downloadAudio,
-  downloadSubtitle,
-  downloadsDir
+  isSupportedUrl,
 };
