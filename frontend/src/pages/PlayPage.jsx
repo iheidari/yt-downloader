@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import VideoPlayer from '../components/VideoPlayer'
 import BackLink from '../components/BackLink'
+import VideoPlayer from '../components/VideoPlayer'
 import { useHistory } from '../context/useHistory'
 import { usePlayer } from '../context/usePlayer'
 import { fileUrl } from '../lib/media'
@@ -11,25 +11,25 @@ function PlayPageContent({ downloadId }) {
   const { playTrack } = usePlayer()
   const [coldResult, setColdResult] = useState({ status: 'pending', data: null })
 
-  const fromContext = history.find(d => d.downloadId === downloadId) || null
+  const fromContext = history.find((d) => d.downloadId === downloadId) || null
 
   useEffect(() => {
     if (fromContext) return
     let cancelled = false
 
     fetch(`${apiUrl}/api/files`)
-      .then(r => r.json())
-      .then(data => {
+      .then((r) => r.json())
+      .then((data) => {
         if (cancelled) return
         if (data.success && Array.isArray(data.data)) {
-          const found = data.data.find(d => d.downloadId === downloadId)
+          const found = data.data.find((d) => d.downloadId === downloadId)
           if (found && !found.expired) {
             setColdResult({
               status: 'found',
               data: {
                 ...found,
-                fileUrl: fileUrl(apiUrl, found.downloadId, found.filename)
-              }
+                fileUrl: fileUrl(apiUrl, found.downloadId, found.filename),
+              },
             })
             return
           }
@@ -46,7 +46,9 @@ function PlayPageContent({ downloadId }) {
         }
       })
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [downloadId, fromContext, apiUrl, findById])
 
   const resolved = fromContext || (coldResult.status === 'found' ? coldResult.data : null)
@@ -64,7 +66,9 @@ function PlayPageContent({ downloadId }) {
       <div className="max-w-4xl mx-auto">
         {backLink}
         <div className="bg-surface-container-lowest border border-surface-variant rounded-xl p-12 text-center">
-          <span className="material-symbols-outlined text-[48px] text-secondary mb-3 block">schedule</span>
+          <span className="material-symbols-outlined text-[48px] text-secondary mb-3 block">
+            schedule
+          </span>
           <h2 className="font-headline-md text-headline-md text-on-surface mb-2">File not found</h2>
           <p className="font-body-md text-body-md text-secondary mb-6">
             This download may have expired (files are deleted after 24 hours).

@@ -11,11 +11,13 @@ function startCleanupScheduler() {
   }
 
   const intervalMs = CLEANUP_INTERVAL_HOURS * 60 * 60 * 1000;
-  
-  console.log(`🧹 Cleanup scheduler started (runs every ${CLEANUP_INTERVAL_HOURS}h, max age: ${MAX_FILE_AGE_HOURS}h)`);
-  
+
+  console.log(
+    `🧹 Cleanup scheduler started (runs every ${CLEANUP_INTERVAL_HOURS}h, max age: ${MAX_FILE_AGE_HOURS}h)`,
+  );
+
   runCleanup();
-  
+
   cleanupInterval = setInterval(() => {
     runCleanup();
   }, intervalMs);
@@ -61,5 +63,5 @@ if (require.main === module) {
 module.exports = {
   startCleanupScheduler,
   stopCleanupScheduler,
-  runCleanup
+  runCleanup,
 };

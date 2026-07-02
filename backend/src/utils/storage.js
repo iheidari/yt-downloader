@@ -38,19 +38,17 @@ function listDownloads() {
     if (!metadata) continue;
 
     const dirPath = path.join(downloadsDir, entry.name);
-    const files = fs.readdirSync(dirPath).filter(f => f !== METADATA_FILE);
+    const files = fs.readdirSync(dirPath).filter((f) => f !== METADATA_FILE);
     downloads.push({
       downloadId: entry.name,
       ...metadata,
       files,
       expired: files.length === 0,
-      path: dirPath
+      path: dirPath,
     });
   }
 
-  return downloads.sort((a, b) =>
-    new Date(b.createdAt) - new Date(a.createdAt)
-  );
+  return downloads.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
 function getDownloadFilePath(downloadId, filename) {
@@ -82,7 +80,7 @@ function expireDownload(downloadId) {
   const dirPath = path.join(downloadsDir, downloadId);
   if (!fs.existsSync(dirPath)) return false;
 
-  const files = fs.readdirSync(dirPath).filter(f => f !== METADATA_FILE);
+  const files = fs.readdirSync(dirPath).filter((f) => f !== METADATA_FILE);
   for (const file of files) {
     fs.rmSync(path.join(dirPath, file), { force: true, recursive: true });
   }
@@ -114,7 +112,7 @@ function cleanupOldDownloads(maxAgeHours = 24) {
       const stats = fs.statSync(dirPath);
       if (!stats.isDirectory()) continue;
 
-      const files = fs.readdirSync(dirPath).filter(f => f !== METADATA_FILE);
+      const files = fs.readdirSync(dirPath).filter((f) => f !== METADATA_FILE);
       if (files.length === 0) continue;
 
       const metadata = getDownloadMetadata(dir);
@@ -146,5 +144,5 @@ module.exports = {
   deleteDownload,
   expireDownload,
   setKept,
-  cleanupOldDownloads
+  cleanupOldDownloads,
 };

@@ -1,4 +1,4 @@
-import { useRef, useLayoutEffect } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePlayer } from '../context/usePlayer'
 
@@ -22,7 +22,7 @@ function PlayerDock() {
     togglePlay,
     seek,
     closePlayer,
-    registerDock
+    registerDock,
   } = usePlayer()
   const navigate = useNavigate()
   const thumbRef = useRef(null)

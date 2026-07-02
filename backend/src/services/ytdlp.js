@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { downloadsDir } = require('../utils/storage');
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Use the updated yt-dlp binary from ~/.local/bin if available, else fall back to system
 const homeBin = path.join(process.env.HOME || '', '.local', 'bin');
@@ -14,7 +14,7 @@ const ytDlpBin = fs.existsSync(localYtDlp) ? localYtDlp : 'yt-dlp';
 const nodeDir = path.dirname(process.execPath);
 const ytDlpEnv = {
   ...process.env,
-  PATH: [nodeDir, homeBin, process.env.PATH].filter(Boolean).join(':')
+  PATH: [nodeDir, homeBin, process.env.PATH].filter(Boolean).join(':'),
 };
 
 console.log(`🔧 Using yt-dlp binary: ${ytDlpBin}`);
@@ -33,7 +33,7 @@ function runYtDlp(args, options = {}) {
     const ytDlp = spawn(ytDlpBin, args, {
       timeout: options.timeout || 120000,
       env: ytDlpEnv,
-      ...options.spawnOptions
+      ...options.spawnOptions,
     });
 
     let stdout = '';
@@ -43,7 +43,7 @@ function runYtDlp(args, options = {}) {
       stdout += data.toString();
       if (options.onProgress) {
         const lines = data.toString().split('\n');
-        lines.forEach(line => {
+        lines.forEach((line) => {
           if (line.includes('%')) {
             options.onProgress(line);
           }
@@ -71,11 +71,12 @@ function runYtDlp(args, options = {}) {
 
 async function fetchYouTubeInfo(url) {
   const { stdout } = await runYtDlp([
-    '--extractor-args', YOUTUBE_EXTRACTOR_ARGS,
+    '--extractor-args',
+    YOUTUBE_EXTRACTOR_ARGS,
     '--dump-json',
     '--no-download',
     '--no-playlist',
-    url
+    url,
   ]);
   return JSON.parse(stdout);
 }
@@ -87,22 +88,30 @@ async function getVideoInfo(url) {
     // strips video URLs. Retry with a small back-off until the full ladder appears.
     let info = await fetchYouTubeInfo(url);
     const videoOnlyCount = (i) =>
-      i.formats.filter(f => f.vcodec !== 'none' && f.acodec === 'none').length;
+      i.formats.filter((f) => f.vcodec !== 'none' && f.acodec === 'none').length;
 
     for (let attempt = 1; attempt <= 4 && videoOnlyCount(info) === 0; attempt++) {
-      console.log(`⚠️  No video-only formats on attempt ${attempt}, retrying after ${attempt * 500}ms…`);
+      console.log(
+        `⚠️  No video-only formats on attempt ${attempt}, retrying after ${attempt * 500}ms…`,
+      );
       await sleep(attempt * 500);
       info = await fetchYouTubeInfo(url);
     }
 
     console.log(`📊 yt-dlp returned ${info.formats.length} total formats for: ${info.title}`);
-    console.log(`   Video-only: ${info.formats.filter(f => f.vcodec !== 'none' && f.acodec === 'none').length}`);
-    console.log(`   Audio-only: ${info.formats.filter(f => f.acodec !== 'none' && f.vcodec === 'none').length}`);
-    console.log(`   Combined: ${info.formats.filter(f => f.vcodec !== 'none' && f.acodec !== 'none').length}`);
+    console.log(
+      `   Video-only: ${info.formats.filter((f) => f.vcodec !== 'none' && f.acodec === 'none').length}`,
+    );
+    console.log(
+      `   Audio-only: ${info.formats.filter((f) => f.acodec !== 'none' && f.vcodec === 'none').length}`,
+    );
+    console.log(
+      `   Combined: ${info.formats.filter((f) => f.vcodec !== 'none' && f.acodec !== 'none').length}`,
+    );
 
     const videoFormats = info.formats
-      .filter(f => f.vcodec !== 'none' && f.acodec === 'none')
-      .map(f => ({
+      .filter((f) => f.vcodec !== 'none' && f.acodec === 'none')
+      .map((f) => ({
         formatId: f.format_id,
         ext: f.ext,
         resolution: f.resolution,
@@ -110,24 +119,24 @@ async function getVideoInfo(url) {
         vcodec: f.vcodec,
         fps: f.fps,
         quality: f.quality,
-        formatNote: f.format_note
+        formatNote: f.format_note,
       }));
 
     const audioFormats = info.formats
-      .filter(f => f.acodec !== 'none' && f.vcodec === 'none')
-      .map(f => ({
+      .filter((f) => f.acodec !== 'none' && f.vcodec === 'none')
+      .map((f) => ({
         formatId: f.format_id,
         ext: f.ext,
         filesize: f.filesize || f.filesize_approx,
         acodec: f.acodec,
         abr: f.abr,
         asr: f.asr,
-        audioChannels: f.audio_channels
+        audioChannels: f.audio_channels,
       }));
 
     const combinedFormats = info.formats
-      .filter(f => f.vcodec !== 'none' && f.acodec !== 'none')
-      .map(f => ({
+      .filter((f) => f.vcodec !== 'none' && f.acodec !== 'none')
+      .map((f) => ({
         formatId: f.format_id,
         ext: f.ext,
         resolution: f.resolution,
@@ -136,15 +145,15 @@ async function getVideoInfo(url) {
         acodec: f.acodec,
         fps: f.fps,
         quality: f.quality,
-        formatNote: f.format_note
+        formatNote: f.format_note,
       }));
 
     const subtitles = {};
     if (info.subtitles) {
       Object.entries(info.subtitles).forEach(([lang, formats]) => {
-        subtitles[lang] = formats.map(f => ({
+        subtitles[lang] = formats.map((f) => ({
           url: f.url,
-          ext: f.ext
+          ext: f.ext,
         }));
       });
     }
@@ -161,10 +170,10 @@ async function getVideoInfo(url) {
       formats: {
         video: videoFormats,
         audio: audioFormats,
-        combined: combinedFormats
+        combined: combinedFormats,
       },
       subtitles,
-      chapters: info.chapters || []
+      chapters: info.chapters || [],
     };
   } catch (error) {
     throw new Error(`Failed to get video info: ${error.message}`);
@@ -175,9 +184,7 @@ async function getVideoInfo(url) {
 // media file by extension and describe it for the routes/storage layer.
 function describeDownloadedFile(downloadPath, downloadId, extensions, notFoundMessage) {
   const files = fs.readdirSync(downloadPath);
-  const filename = files.find(f =>
-    extensions.some(ext => f.toLowerCase().endsWith(ext))
-  );
+  const filename = files.find((f) => extensions.some((ext) => f.toLowerCase().endsWith(ext)));
 
   if (!filename) {
     throw new Error(notFoundMessage);
@@ -191,7 +198,7 @@ function describeDownloadedFile(downloadPath, downloadId, extensions, notFoundMe
     path: path.join(downloadPath, filename),
     size: stats.size,
     createdAt: stats.birthtime,
-    relativePath: path.join(downloadId, filename)
+    relativePath: path.join(downloadId, filename),
   };
 }
 
@@ -206,13 +213,15 @@ async function runDownloadWithRetry(args, onProgress, label) {
           if (match && onProgress) {
             onProgress(parseFloat(match[1]));
           }
-        }
+        },
       });
       return;
     } catch (err) {
       const retriable = /Requested format is not available|SABR|missing a URL/i.test(err.message);
       if (!retriable || attempt === 3) throw err;
-      console.log(`⚠️  ${label} download attempt ${attempt} failed (${err.message.split('\n')[0]}), retrying after ${attempt * 750}ms…`);
+      console.log(
+        `⚠️  ${label} download attempt ${attempt} failed (${err.message.split('\n')[0]}), retrying after ${attempt * 750}ms…`,
+      );
       await sleep(attempt * 750);
     }
   }
@@ -236,12 +245,15 @@ async function downloadVideo(url, formatId, downloadId, onProgress, mergeWithAud
       : `${formatId}/best`;
 
     const args = [
-      '--extractor-args', YOUTUBE_EXTRACTOR_ARGS,
-      '-f', formatString,
-      '-o', outputTemplate,
+      '--extractor-args',
+      YOUTUBE_EXTRACTOR_ARGS,
+      '-f',
+      formatString,
+      '-o',
+      outputTemplate,
       '--newline',
       '--progress',
-      '--no-playlist'
+      '--no-playlist',
     ];
 
     // Add merge output format for video+audio combinations
@@ -257,7 +269,7 @@ async function downloadVideo(url, formatId, downloadId, onProgress, mergeWithAud
       downloadPath,
       downloadId,
       ['.mp4', '.webm', '.mkv', '.mov'],
-      'Downloaded file not found'
+      'Downloaded file not found',
     );
   } catch (error) {
     if (fs.existsSync(downloadPath)) {
@@ -282,21 +294,28 @@ async function downloadAudio(url, formatId, downloadId, onProgress) {
   const formatString = `${formatId}/bestaudio[ext=m4a]/bestaudio/best`;
 
   try {
-    await runDownloadWithRetry([
-      '--extractor-args', YOUTUBE_EXTRACTOR_ARGS,
-      '-f', formatString,
-      '-o', outputTemplate,
-      '--newline',
-      '--progress',
-      '--no-playlist',
-      url
-    ], onProgress, 'Audio');
+    await runDownloadWithRetry(
+      [
+        '--extractor-args',
+        YOUTUBE_EXTRACTOR_ARGS,
+        '-f',
+        formatString,
+        '-o',
+        outputTemplate,
+        '--newline',
+        '--progress',
+        '--no-playlist',
+        url,
+      ],
+      onProgress,
+      'Audio',
+    );
 
     return describeDownloadedFile(
       downloadPath,
       downloadId,
       ['.mp3', '.m4a', '.webm', '.ogg', '.opus', '.wav', '.flac'],
-      'Downloaded audio file not found'
+      'Downloaded audio file not found',
     );
   } catch (error) {
     if (fs.existsSync(downloadPath)) {
@@ -308,7 +327,7 @@ async function downloadAudio(url, formatId, downloadId, onProgress) {
 
 async function downloadSubtitle(url, lang, ext, downloadId) {
   const downloadPath = path.join(downloadsDir, downloadId);
-  
+
   if (!fs.existsSync(downloadPath)) {
     fs.mkdirSync(downloadPath, { recursive: true });
   }
@@ -316,19 +335,23 @@ async function downloadSubtitle(url, lang, ext, downloadId) {
   const outputTemplate = path.join(downloadPath, '%(title)s');
 
   await runYtDlp([
-    '--extractor-args', YOUTUBE_EXTRACTOR_ARGS,
+    '--extractor-args',
+    YOUTUBE_EXTRACTOR_ARGS,
     '--write-sub',
-    '--sub-langs', lang,
-    '--convert-subs', ext || 'srt',
+    '--sub-langs',
+    lang,
+    '--convert-subs',
+    ext || 'srt',
     '--skip-download',
-    '-o', outputTemplate,
+    '-o',
+    outputTemplate,
     '--no-playlist',
-    url
+    url,
   ]);
 
   const files = fs.readdirSync(downloadPath);
-  const subtitleFile = files.find(f =>
-    f.includes(lang) && ['.srt', '.vtt', '.ass'].some(e => f.endsWith(e))
+  const subtitleFile = files.find(
+    (f) => f.includes(lang) && ['.srt', '.vtt', '.ass'].some((e) => f.endsWith(e)),
   );
 
   if (!subtitleFile) {
@@ -343,7 +366,7 @@ async function downloadSubtitle(url, lang, ext, downloadId) {
     path: path.join(downloadPath, subtitleFile),
     size: stats.size,
     createdAt: stats.birthtime,
-    relativePath: path.join(downloadId, subtitleFile)
+    relativePath: path.join(downloadId, subtitleFile),
   };
 }
 
@@ -352,5 +375,5 @@ module.exports = {
   downloadVideo,
   downloadAudio,
   downloadSubtitle,
-  downloadsDir
+  downloadsDir,
 };

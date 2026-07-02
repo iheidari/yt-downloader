@@ -15,22 +15,26 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Use helmet but configure it to allow media streaming
-app.use(helmet({
-  contentSecurityPolicy: false, // Disable CSP for media streaming
-  crossOriginResourcePolicy: { policy: 'cross-origin' }, // Allow cross-origin resource sharing
-  crossOriginEmbedderPolicy: false // Allow embedding media
-}));
+app.use(
+  helmet({
+    contentSecurityPolicy: false, // Disable CSP for media streaming
+    crossOriginResourcePolicy: { policy: 'cross-origin' }, // Allow cross-origin resource sharing
+    crossOriginEmbedderPolicy: false, // Allow embedding media
+  }),
+);
 
 // Configure CORS - allow same-origin requests and configured FRONTEND_URL
 const corsOrigin = process.env.FRONTEND_URL || false; // false = allow same-origin only
 
-app.use(cors({
-  origin: corsOrigin,
-  methods: ['GET', 'POST', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Range'],
-  exposedHeaders: ['Content-Range', 'Content-Length', 'Accept-Ranges'],
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: corsOrigin,
+    methods: ['GET', 'POST', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Range'],
+    exposedHeaders: ['Content-Range', 'Content-Length', 'Accept-Ranges'],
+    credentials: true,
+  }),
+);
 
 app.use(morgan('dev'));
 app.use(express.json());
@@ -57,9 +61,9 @@ if (fs.existsSync(frontendDist)) {
 
 app.use((err, req, res, next) => {
   console.error('Error:', err);
-  res.status(500).json({ 
+  res.status(500).json({
     error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : undefined
+    message: process.env.NODE_ENV === 'development' ? err.message : undefined,
   });
 });
 

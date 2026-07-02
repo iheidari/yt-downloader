@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useHistory } from '../context/useHistory'
 import { usePlayer } from '../context/usePlayer'
-import PlayerStage from './PlayerStage'
+import { fileUrl, formatFileSize, isAudioFile } from '../lib/media'
 import BackLink from './BackLink'
-import { isAudioFile, formatFileSize, fileUrl } from '../lib/media'
+import PlayerStage from './PlayerStage'
 
 function VideoPlayer({ download, apiUrl }) {
   const navigate = useNavigate()
@@ -16,7 +16,7 @@ function VideoPlayer({ download, apiUrl }) {
     return new Date(dateString).toLocaleDateString(undefined, {
       year: 'numeric',
       month: 'short',
-      day: 'numeric'
+      day: 'numeric',
     })
   }
 
@@ -55,7 +55,10 @@ function VideoPlayer({ download, apiUrl }) {
         <div className="bg-surface p-6 rounded-xl border border-surface-variant">
           <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
             <div className="min-w-0">
-              <h1 className="font-headline-lg text-headline-lg mb-2 break-words" title={download.title}>
+              <h1
+                className="font-headline-lg text-headline-lg mb-2 break-words"
+                title={download.title}
+              >
                 {download.title}
               </h1>
               <p className="text-on-surface-variant flex items-center gap-2 font-body-md text-body-md">

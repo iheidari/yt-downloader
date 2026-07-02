@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams, useLocation } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import ProgressBar from '../components/ProgressBar'
 import { useHistory } from '../context/useHistory'
 
@@ -32,11 +32,11 @@ function DownloadPage() {
           type: startParams.type,
           title: startParams.title || '',
           thumbnail: startParams.thumbnail || '',
-          keep: startParams.keep ? 'true' : 'false'
+          keep: startParams.keep ? 'true' : 'false',
         })
 
         eventSource = new EventSource(
-          `${apiUrl}/api/download/progress/${downloadId}?${qs.toString()}`
+          `${apiUrl}/api/download/progress/${downloadId}?${qs.toString()}`,
         )
 
         eventSource.onmessage = (event) => {
@@ -68,7 +68,7 @@ function DownloadPage() {
             const data = await response.json()
             if (pollCancelled) return
             if (data.success && Array.isArray(data.data)) {
-              const found = data.data.find(d => d.downloadId === downloadId && !d.expired)
+              const found = data.data.find((d) => d.downloadId === downloadId && !d.expired)
               if (found) {
                 addDownload(found)
                 navigate(`/play/${downloadId}`, { replace: true })
@@ -121,7 +121,9 @@ function DownloadPage() {
             progress_activity
           </span>
           <p className="font-body-md text-body-md text-secondary">Download in progress…</p>
-          <p className="font-label-sm text-label-sm text-secondary mt-2">Checking back every few seconds.</p>
+          <p className="font-label-sm text-label-sm text-secondary mt-2">
+            Checking back every few seconds.
+          </p>
         </div>
       </div>
     )

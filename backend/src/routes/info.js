@@ -13,13 +13,13 @@ router.get('/', async (req, res) => {
     const info = await getVideoInfo(url);
     res.json({
       success: true,
-      data: info
+      data: info,
     });
   } catch (error) {
     console.error('Error fetching video info:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });

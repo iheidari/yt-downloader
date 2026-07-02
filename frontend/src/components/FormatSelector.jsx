@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import BackLink from './BackLink'
 import { formatFileSize } from '../lib/media'
+import BackLink from './BackLink'
 
 function FormatSelector({ info, onDownload, startingFormat = null }) {
   const [keep, setKeep] = useState(false)
@@ -37,8 +37,8 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
   // Build a unified video list: pick best format per unique resolution,
   // preferring h264/avc for compatibility and video-only (mergeable) for highest qualities.
   const buildVideoOptions = () => {
-    const videoFormats = (info.formats?.video || []).map(f => ({ ...f, _type: 'video' }))
-    const combinedFormats = (info.formats?.combined || []).map(f => ({ ...f, _type: 'combined' }))
+    const videoFormats = (info.formats?.video || []).map((f) => ({ ...f, _type: 'video' }))
+    const combinedFormats = (info.formats?.combined || []).map((f) => ({ ...f, _type: 'combined' }))
     const all = [...videoFormats, ...combinedFormats]
 
     const sorted = [...all].sort((a, b) => {
@@ -50,14 +50,14 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
     })
 
     const seen = new Map()
-    sorted.forEach(format => {
+    sorted.forEach((format) => {
       const res = format.resolution
       if (!res || res === 'audio only') return
       if (!seen.has(res)) seen.set(res, format)
     })
 
     return Array.from(seen.values()).sort(
-      (a, b) => getHeight(b.resolution) - getHeight(a.resolution)
+      (a, b) => getHeight(b.resolution) - getHeight(a.resolution),
     )
   }
 
@@ -67,7 +67,7 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
     const seen = new Map()
     ;[...audio]
       .sort((a, b) => (b.abr || 0) - (a.abr || 0))
-      .forEach(f => {
+      .forEach((f) => {
         const key = Math.round(f.abr || 0)
         if (!seen.has(key)) seen.set(key, f)
       })
@@ -243,7 +243,8 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
                       </div>
                       <div className="min-w-0">
                         <p className="font-label-md text-label-md text-on-surface truncate">
-                          {isBest ? 'High Quality' : 'Standard'} • {(format.ext || 'm4a').toUpperCase()}
+                          {isBest ? 'High Quality' : 'Standard'} •{' '}
+                          {(format.ext || 'm4a').toUpperCase()}
                         </p>
                         <p className="text-label-sm text-secondary">
                           Size: {formatFileSize(format.filesize)}

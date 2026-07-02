@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams, Navigate } from 'react-router-dom'
-import FormatSelector from '../components/FormatSelector'
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import BackLink from '../components/BackLink'
+import FormatSelector from '../components/FormatSelector'
 import { useHistory } from '../context/useHistory'
 
 function InfoPage() {
@@ -23,13 +23,13 @@ function InfoPage() {
     setInfo(null)
 
     fetch(`${apiUrl}/api/info?url=${encodeURIComponent(url)}`)
-      .then(r => r.json())
-      .then(data => {
+      .then((r) => r.json())
+      .then((data) => {
         if (cancelled) return
         if (!data.success) throw new Error(data.error)
         setInfo({ ...data.data, originalUrl: url })
       })
-      .catch(err => {
+      .catch((err) => {
         if (cancelled) return
         setError(err.message || 'Failed to fetch video info')
       })
@@ -37,7 +37,9 @@ function InfoPage() {
         if (!cancelled) setLoading(false)
       })
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [url, apiUrl])
 
   if (!url) return <Navigate to="/" replace />
@@ -54,8 +56,8 @@ function InfoPage() {
           formatId,
           type,
           title: info.title,
-          thumbnail: info.thumbnail
-        })
+          thumbnail: info.thumbnail,
+        }),
       })
       const data = await response.json()
       if (!data.success) throw new Error(data.error)
@@ -70,8 +72,8 @@ function InfoPage() {
           type,
           title: info.title,
           thumbnail: info.thumbnail,
-          keep
-        }
+          keep,
+        },
       })
     } catch (err) {
       setError(err.message || 'Failed to start download')
@@ -115,13 +117,7 @@ function InfoPage() {
 
   if (!info) return null
 
-  return (
-    <FormatSelector
-      info={info}
-      onDownload={handleDownload}
-      startingFormat={startingFormat}
-    />
-  )
+  return <FormatSelector info={info} onDownload={handleDownload} startingFormat={startingFormat} />
 }
 
 export default InfoPage

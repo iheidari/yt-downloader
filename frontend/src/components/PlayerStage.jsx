@@ -1,4 +1,4 @@
-import { useRef, useLayoutEffect } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import { usePlayer } from '../context/usePlayer'
 
 // Full-size host for the shared media element on the play page. It doesn't render

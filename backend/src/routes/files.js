@@ -8,7 +8,7 @@ const {
   deleteDownload,
   expireDownload,
   setKept,
-  downloadsDir
+  downloadsDir,
 } = require('../utils/storage');
 
 // RFC 5987 encoding for unicode filenames in Content-Disposition header
@@ -32,12 +32,12 @@ router.get('/', (req, res) => {
     const downloads = listDownloads();
     res.json({
       success: true,
-      data: downloads
+      data: downloads,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -51,7 +51,7 @@ router.get('/:downloadId/:filename', (req, res) => {
   if (!filePath) {
     return res.status(404).json({
       success: false,
-      error: 'File not found'
+      error: 'File not found',
     });
   }
 
@@ -60,9 +60,12 @@ router.get('/:downloadId/:filename', (req, res) => {
 
   // Decode URL-encoded filename
   const decodedFilename = decodeURIComponent(filename);
-  
+
   // Set Content-Disposition with proper unicode handling
-  res.setHeader('Content-Disposition', getContentDisposition(decodedFilename, action === 'download'));
+  res.setHeader(
+    'Content-Disposition',
+    getContentDisposition(decodedFilename, action === 'download'),
+  );
 
   const ext = path.extname(filename).toLowerCase();
   const mimeTypes = {
@@ -75,7 +78,7 @@ router.get('/:downloadId/:filename', (req, res) => {
     '.ogg': 'audio/ogg',
     '.opus': 'audio/opus',
     '.srt': 'text/plain',
-    '.vtt': 'text/vtt'
+    '.vtt': 'text/vtt',
   };
 
   res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
@@ -109,18 +112,18 @@ router.patch('/:downloadId', (req, res) => {
     if (ok) {
       res.json({
         success: true,
-        data: { downloadId, kept }
+        data: { downloadId, kept },
       });
     } else {
       res.status(404).json({
         success: false,
-        error: 'Download not found'
+        error: 'Download not found',
       });
     }
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });
@@ -134,18 +137,18 @@ router.delete('/:downloadId', (req, res) => {
     if (ok) {
       res.json({
         success: true,
-        message: permanent ? 'Download deleted permanently' : 'Download expired'
+        message: permanent ? 'Download deleted permanently' : 'Download expired',
       });
     } else {
       res.status(404).json({
         success: false,
-        error: 'Download not found'
+        error: 'Download not found',
       });
     }
   } catch (error) {
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
     });
   }
 });

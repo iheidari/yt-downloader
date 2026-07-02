@@ -1,6 +1,6 @@
-import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { fileUrl, isAudioFile } from '../lib/media'
 import { PlayerContext } from './playerContext.js'
-import { isAudioFile, fileUrl } from '../lib/media'
 
 // Build the player's view of a download. `download` comes from history/cold-lookup.
 function toTrack(download, apiUrl) {
@@ -10,7 +10,7 @@ function toTrack(download, apiUrl) {
     filename: download.filename,
     isAudio: isAudioFile(download.filename),
     streamUrl: fileUrl(apiUrl, download.downloadId, download.filename),
-    downloadUrl: fileUrl(apiUrl, download.downloadId, download.filename, { download: true })
+    downloadUrl: fileUrl(apiUrl, download.downloadId, download.filename, { download: true }),
   }
 }
 
@@ -20,9 +20,9 @@ export function PlayerProvider({ children }) {
   // keeps going across route changes. Remounting (what the router does to pages)
   // is exactly what we avoid.
   const mediaRef = useRef(null)
-  const homeRef = useRef(null)   // hidden parking spot when no host is mounted
-  const stageRef = useRef(null)  // full-size slot on the play page
-  const dockRef = useRef(null)   // thumbnail box in the bottom bar
+  const homeRef = useRef(null) // hidden parking spot when no host is mounted
+  const stageRef = useRef(null) // full-size slot on the play page
+  const dockRef = useRef(null) // thumbnail box in the bottom bar
 
   const [current, setCurrent] = useState(null)
   const [stageActive, setStageActive] = useState(false)
@@ -39,16 +39,22 @@ export function PlayerProvider({ children }) {
     if (host && media.parentNode !== host) host.appendChild(media)
   }, [])
 
-  const registerStage = useCallback((el) => {
-    stageRef.current = el
-    setStageActive(!!el)
-    placeMedia()
-  }, [placeMedia])
+  const registerStage = useCallback(
+    (el) => {
+      stageRef.current = el
+      setStageActive(!!el)
+      placeMedia()
+    },
+    [placeMedia],
+  )
 
-  const registerDock = useCallback((el) => {
-    dockRef.current = el
-    placeMedia()
-  }, [placeMedia])
+  const registerDock = useCallback(
+    (el) => {
+      dockRef.current = el
+      placeMedia()
+    },
+    [placeMedia],
+  )
 
   // Native controls only when full-size; the dock drives playback with its own UI.
   // Styling is imperative (one shared element, different shape per host) so React's
@@ -83,7 +89,9 @@ export function PlayerProvider({ children }) {
     const onPause = () => setIsPlaying(false)
     const onTime = () => setCurrentTime(media.currentTime || 0)
     const onMeta = () => setDuration(media.duration || 0)
-    const onError = () => { if (media.currentSrc) setLoadError(true) }
+    const onError = () => {
+      if (media.currentSrc) setLoadError(true)
+    }
     media.addEventListener('play', onPlay)
     media.addEventListener('pause', onPause)
     media.addEventListener('timeupdate', onTime)
@@ -147,7 +155,7 @@ export function PlayerProvider({ children }) {
     togglePlay,
     seek,
     registerStage,
-    registerDock
+    registerDock,
   }
 
   return (

@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { fileUrl } from '../lib/media'
 import {
-  HistoryContext,
+  EXPIRED_STORAGE_KEY,
   HISTORY_API_URL,
   HISTORY_STORAGE_KEY,
-  EXPIRED_STORAGE_KEY
+  HistoryContext,
 } from './historyContext.js'
-import { fileUrl } from '../lib/media'
 
 function loadKey(key) {
   try {
@@ -20,7 +20,7 @@ function loadKey(key) {
 function decorate(d) {
   return {
     ...d,
-    fileUrl: fileUrl(HISTORY_API_URL, d.downloadId, d.filename)
+    fileUrl: fileUrl(HISTORY_API_URL, d.downloadId, d.filename),
   }
 }
 
@@ -56,8 +56,11 @@ export function HistoryProvider({ children }) {
         if (!data.success || !Array.isArray(data.data)) return
 
         const sortByDate = (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-        const active = data.data.filter(d => !d.expired).map(decorate).sort(sortByDate)
-        const expiredFromServer = data.data.filter(d => d.expired).sort(sortByDate)
+        const active = data.data
+          .filter((d) => !d.expired)
+          .map(decorate)
+          .sort(sortByDate)
+        const expiredFromServer = data.data.filter((d) => d.expired).sort(sortByDate)
 
         setHistory(active)
         setExpired(expiredFromServer)
@@ -67,18 +70,20 @@ export function HistoryProvider({ children }) {
     }
 
     sync()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const addDownload = useCallback((download) => {
     const decorated = decorate(download)
-    setHistory(prev => {
-      const without = prev.filter(d => d.downloadId !== decorated.downloadId)
+    setHistory((prev) => {
+      const without = prev.filter((d) => d.downloadId !== decorated.downloadId)
       return [decorated, ...without]
     })
-    setExpired(prev => {
+    setExpired((prev) => {
       if (!decorated.url) return prev
-      return prev.filter(d => d.url !== decorated.url)
+      return prev.filter((d) => d.url !== decorated.url)
     })
   }, [])
 
@@ -88,14 +93,13 @@ export function HistoryProvider({ children }) {
     } catch (err) {
       console.error('❌ Expire error:', err)
     }
-    const removed = historyRef.current.find(d => d.downloadId === downloadId)
-    setHistory(prev => prev.filter(d => d.downloadId !== downloadId))
+    const removed = historyRef.current.find((d) => d.downloadId === downloadId)
+    setHistory((prev) => prev.filter((d) => d.downloadId !== downloadId))
     if (removed) {
-      setExpired(prev => {
-        const without = prev.filter(d => d.downloadId !== downloadId)
+      setExpired((prev) => {
+        const without = prev.filter((d) => d.downloadId !== downloadId)
         const entry = { ...removed, expired: true, expiredAt: new Date().toISOString() }
-        return [entry, ...without]
-          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        return [entry, ...without].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       })
     }
   }, [])
@@ -106,39 +110,43 @@ export function HistoryProvider({ children }) {
     } catch (err) {
       console.error('❌ Forget error:', err)
     }
-    setExpired(prev => prev.filter(d => d.downloadId !== downloadId))
+    setExpired((prev) => prev.filter((d) => d.downloadId !== downloadId))
   }, [])
 
   const setKept = useCallback(async (downloadId, kept) => {
     // Optimistic update; revert on failure.
-    setHistory(prev => prev.map(d => (d.downloadId === downloadId ? { ...d, kept } : d)))
+    setHistory((prev) => prev.map((d) => (d.downloadId === downloadId ? { ...d, kept } : d)))
     try {
-      const response = await fetch(
-        `${HISTORY_API_URL}/api/files/${downloadId}?kept=${kept}`,
-        { method: 'PATCH' }
-      )
+      const response = await fetch(`${HISTORY_API_URL}/api/files/${downloadId}?kept=${kept}`, {
+        method: 'PATCH',
+      })
       const data = await response.json()
       if (!data.success) throw new Error(data.error)
     } catch (err) {
       console.error('❌ Keep toggle error:', err)
-      setHistory(prev => prev.map(d => (d.downloadId === downloadId ? { ...d, kept: !kept } : d)))
+      setHistory((prev) =>
+        prev.map((d) => (d.downloadId === downloadId ? { ...d, kept: !kept } : d)),
+      )
     }
   }, [])
 
   const findById = useCallback((downloadId) => {
-    return historyRef.current.find(d => d.downloadId === downloadId) || null
+    return historyRef.current.find((d) => d.downloadId === downloadId) || null
   }, [])
 
-  const value = useMemo(() => ({
-    history,
-    expired,
-    apiUrl: HISTORY_API_URL,
-    addDownload,
-    removeDownload,
-    forgetExpired,
-    setKept,
-    findById
-  }), [history, expired, addDownload, removeDownload, forgetExpired, setKept, findById])
+  const value = useMemo(
+    () => ({
+      history,
+      expired,
+      apiUrl: HISTORY_API_URL,
+      addDownload,
+      removeDownload,
+      forgetExpired,
+      setKept,
+      findById,
+    }),
+    [history, expired, addDownload, removeDownload, forgetExpired, setKept, findById],
+  )
 
   return <HistoryContext.Provider value={value}>{children}</HistoryContext.Provider>
 }

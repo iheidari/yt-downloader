@@ -10,7 +10,11 @@
     "lint": "biome check .",
     "format": "biome format --write ."
   },
-  "keywords": ["youtube", "downloader", "yt-dlp"],
+  "keywords": [
+    "youtube",
+    "downloader",
+    "yt-dlp"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {

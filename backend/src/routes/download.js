@@ -10,12 +10,12 @@ router.post('/', async (req, res) => {
   if (!url || !formatId) {
     return res.status(400).json({
       success: false,
-      error: 'URL and formatId are required'
+      error: 'URL and formatId are required',
     });
   }
 
   const downloadId = uuidv4();
-  
+
   res.json({
     success: true,
     data: {
@@ -23,8 +23,8 @@ router.post('/', async (req, res) => {
       url,
       formatId,
       type: type || 'video',
-      status: 'started'
-    }
+      status: 'started',
+    },
   });
 });
 
@@ -35,7 +35,7 @@ router.get('/progress/:downloadId', async (req, res) => {
   if (!url || !formatId) {
     return res.status(400).json({
       success: false,
-      error: 'URL and formatId are required'
+      error: 'URL and formatId are required',
     });
   }
 
@@ -86,7 +86,7 @@ router.get('/progress/:downloadId', async (req, res) => {
       size: result.size,
       kept: keep === 'true',
       createdAt: new Date().toISOString(),
-      downloadId
+      downloadId,
     };
 
     saveDownloadMetadata(downloadId, metadata);
@@ -97,8 +97,8 @@ router.get('/progress/:downloadId', async (req, res) => {
       progress: 100,
       data: {
         ...metadata,
-        fileUrl: `/api/files/${downloadId}/${encodeURIComponent(result.filename)}`
-      }
+        fileUrl: `/api/files/${downloadId}/${encodeURIComponent(result.filename)}`,
+      },
     });
 
     clearInterval(heartbeatInterval);
@@ -109,7 +109,7 @@ router.get('/progress/:downloadId', async (req, res) => {
     sendEvent({
       type: 'error',
       downloadId,
-      error: error.message
+      error: error.message,
     });
     res.end();
   }
