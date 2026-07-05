@@ -1,7 +1,7 @@
 services:
   app:
-    image: ghcr.io/iheidari/yt-downloader:latest
-    container_name: yt-downloader
+    image: ghcr.io/iheidari/tubekeep:latest
+    container_name: tubekeep
     restart: unless-stopped
     ports:
       - "3001:3001"

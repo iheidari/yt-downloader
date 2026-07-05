@@ -3,9 +3,9 @@
 This guide walks you through configuring GitHub Actions to build the Docker image, push it to GHCR, and roll it out on your Proxmox Docker host via a Cloudflare Access SSH proxy.
 
 The workflow at `.github/workflows/deploy.yml`:
-1. Builds `ghcr.io/iheidari/yt-downloader:latest` and `:<sha>`.
+1. Builds `ghcr.io/iheidari/tubekeep:latest` and `:<sha>`.
 2. SSHes to your host through `cloudflared access` (no public SSH port required).
-3. Runs `docker compose pull && docker compose up -d` in `/opt/yt-downloader`.
+3. Runs `docker compose pull && docker compose up -d` in `/opt/tubekeep`.
 
 ---
 
@@ -49,7 +49,7 @@ The host pulls the image from GitHub Container Registry, so it needs a Personal 
 
 ## 4. Add GitHub repository secrets
 
-Go to `https://github.com/iheidari/yt-downloader` → **Settings → Secrets and variables → Actions** and add:
+Go to `https://github.com/iheidari/tubekeep` → **Settings → Secrets and variables → Actions** and add:
 
 | Secret | Value |
 | --- | --- |
@@ -68,15 +68,15 @@ Go to `https://github.com/iheidari/yt-downloader` → **Settings → Secrets and
 One-time setup on the Proxmox Docker host:
 
 ```bash
-sudo mkdir -p /opt/yt-downloader/downloads
-sudo chown -R "$USER:$USER" /opt/yt-downloader
-cd /opt/yt-downloader
+sudo mkdir -p /opt/tubekeep/downloads
+sudo chown -R "$USER:$USER" /opt/tubekeep
+cd /opt/tubekeep
 
 # Copy docker-compose.yml from the repo
-scp /path/to/repo/docker-compose.yml user@host:/opt/yt-downloader/
+scp /path/to/repo/docker-compose.yml user@host:/opt/tubekeep/
 
 # Create .env on the host
-cat > /opt/yt-downloader/.env <<'EOF'
+cat > /opt/tubekeep/.env <<'EOF'
 NODE_ENV=production
 PORT=3001
 FRONTEND_URL=https://ytd.heidari.ca
@@ -96,7 +96,7 @@ In Cloudflare Zero Trust → **Networks → Tunnels → your tunnel → Public H
 
 - **Subdomain**: `ytd`
 - **Domain**: `heidari.ca`
-- **Service**: `http://localhost:3001` (or `http://yt-downloader:3001` if `cloudflared` runs in the same Docker network)
+- **Service**: `http://localhost:3001` (or `http://tubekeep:3001` if `cloudflared` runs in the same Docker network)
 
 ---
 
@@ -142,7 +142,7 @@ The Cloudflare Tunnel public hostname isn't pointing at `http://localhost:3001` 
 
 **Inspect on the host**
 ```bash
-cd /opt/yt-downloader
+cd /opt/tubekeep
 docker compose ps
 docker compose logs -f app
 ```
@@ -155,7 +155,7 @@ docker compose logs -f app
 - [ ] Created a Cloudflare Access service token and added it to the SSH hostname policy
 - [ ] Created a GHCR PAT with `read:packages`
 - [ ] Added all seven secrets to the GitHub repo
-- [ ] Prepared `/opt/yt-downloader` with `docker-compose.yml` and `.env`
+- [ ] Prepared `/opt/tubekeep` with `docker-compose.yml` and `.env`
 - [ ] Configured a Cloudflare Tunnel public hostname for `ytd.heidari.ca`
 - [ ] Verified `cloudflared access ssh` works locally
 - [ ] Pushed to `main` and confirmed the workflow succeeded

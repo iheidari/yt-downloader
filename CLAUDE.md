@@ -50,7 +50,7 @@ A download is **"expired"** when its directory + `metadata.json` still exist but
 - default → `expireDownload()`: removes media files, keeps metadata, stamps `expiredAt`.
 - `?permanent=true` → `deleteDownload()`: removes the whole directory.
 
-The hourly cleanup scheduler (`services/cleanup.js`, `MAX_FILE_AGE_HOURS = 24`) *expires* old downloads — it does not hard-delete. The frontend mirrors this with two localStorage keys: `ytDownloaderHistory` (active) and `ytDownloaderExpired`.
+The hourly cleanup scheduler (`services/cleanup.js`, `MAX_FILE_AGE_HOURS = 24`) *expires* old downloads — it does not hard-delete. The frontend mirrors this with two localStorage keys: `tubekeepHistory` (active) and `tubekeepExpired`.
 
 ### Backend (`backend/src/`)
 - **`server.js`** — Express entry (helmet with CSP disabled for media + cross-origin resource policy, CORS, morgan), route mounting, static SPA serving, cleanup scheduler bootstrap.
@@ -98,7 +98,7 @@ VITE_API_URL=http://localhost:3001   # unset → falls back to window.location.o
 
 CI/CD lives in `.github/workflows/deploy.yml`. On push to `main` (or manual dispatch):
 1. Build a multi-stage Docker image (`Dockerfile`: frontend `npm run build` → Node 22 runtime with `ffmpeg` + `yt-dlp` installed via pip) and push to `ghcr.io/<repo>:latest`.
-2. SSH to a Proxmox Docker host **through a Cloudflare Access tunnel** (`cloudflared access ssh`, using CF service-token secrets), then `cd /opt/yt-downloader && docker compose pull && docker compose up -d`.
+2. SSH to a Proxmox Docker host **through a Cloudflare Access tunnel** (`cloudflared access ssh`, using CF service-token secrets), then `cd /opt/tubekeep && docker compose pull && docker compose up -d`.
 
 `docker-compose.yml` runs that GHCR image, maps `3001:3001`, and bind-mounts `./downloads`. The legacy `deploy/ecosystem.config.js` (PM2) is **not** the active path — Docker is. There is no Caddyfile in this repo; TLS/routing is handled externally (Cloudflare).
 

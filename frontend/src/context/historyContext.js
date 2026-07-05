@@ -7,5 +7,5 @@ export const HistoryContext = createContext(null)
 // the name the history layer already uses.
 export const HISTORY_API_URL = API_URL
 
-export const HISTORY_STORAGE_KEY = 'ytDownloaderHistory'
-export const EXPIRED_STORAGE_KEY = 'ytDownloaderExpired'
+export const HISTORY_STORAGE_KEY = 'tubekeepHistory'
+export const EXPIRED_STORAGE_KEY = 'tubekeepExpired'

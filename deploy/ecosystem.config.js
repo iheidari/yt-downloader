@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: 'yt-downloader-api',
+      name: 'tubekeep-api',
       script: './src/server.js',
       cwd: '/data/ytd/backend',
       env: {

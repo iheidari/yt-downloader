@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Setting up YT Downloader server on ytd.heidari.ca..."
+echo "🚀 Setting up Tubekeep server on ytd.heidari.ca..."
 echo ""
 
 # Update system
@@ -65,7 +65,7 @@ echo ""
 echo "🌐 Domain will be available at: https://ytd.heidari.ca"
 echo ""
 echo "Useful commands:"
-echo "   pm2 logs yt-downloader-api     - View API logs"
+echo "   pm2 logs tubekeep-api          - View API logs"
 echo "   pm2 monit                      - Monitor processes"
 echo "   pm2 status                     - Check status"
 echo "   sudo systemctl status caddy    - Check Caddy status"

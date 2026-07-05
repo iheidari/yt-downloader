@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🚀 Starting Video Downloader Application..."
+echo "🚀 Starting Tubekeep..."
 
 # Check if yt-dlp is installed
 if ! command -v yt-dlp &> /dev/null; then
