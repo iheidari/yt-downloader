@@ -297,7 +297,7 @@ function MovedCard({ download, onForget }) {
               >
                 cloud_done
               </span>
-              Moved to Dropbox
+              In Dropbox
             </span>
           </div>
           {download.url && (
@@ -366,11 +366,10 @@ function DownloadsPage() {
     <>
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-stack-sm mb-stack-md">
         <div>
-          <h2 className="font-headline-lg text-headline-lg text-on-surface mb-2">My Downloads</h2>
-          <p className="font-body-md text-body-md text-on-surface-variant">
-            Manage your saved media. Move a file to your Dropbox to keep it, or download it to your
-            device. Files expire from our server after 1 hour and can be re-downloaded from the
-            source.
+          <h2 className="font-headline-lg text-headline-lg text-ink mb-2">Your downloads</h2>
+          <p className="font-body-md text-body-md text-muted max-w-[52ch]">
+            Files clear from the server after 24 hours. Pin one to keep it, or move it to your
+            Dropbox — expired files can be re-downloaded from the source.
           </p>
         </div>
         <div className="flex items-center gap-2 bg-surface-container-low p-1 rounded-lg">

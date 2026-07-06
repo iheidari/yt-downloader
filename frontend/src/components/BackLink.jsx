@@ -1,14 +1,14 @@
 import { Link } from 'react-router-dom'
 
 // The "← Back" link shown at the top of the info/play/format screens.
-function BackLink() {
+function BackLink({ to = '/', label = 'Back' }) {
   return (
     <Link
-      to="/"
-      className="inline-flex items-center gap-1 text-secondary hover:text-primary font-label-md text-label-md mb-stack-md transition-colors"
+      to={to}
+      className="inline-flex items-center gap-1.5 text-muted hover:text-ink font-semibold text-[13px] mb-stack-md transition-colors"
     >
-      <span className="material-symbols-outlined text-[20px]">arrow_back</span>
-      Back
+      <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+      {label}
     </Link>
   )
 }
