@@ -5,7 +5,7 @@ A full-stack web application for downloading videos from YouTube and other platf
 ## Architecture
 
 ```
-yt-downloader/
+tubekeep/
 ├── backend/               # Node.js Express API server
 │   ├── src/
 │   │   ├── server.js      # Express app configuration
@@ -94,8 +94,8 @@ Before running the application, ensure you have:
 
 1. **Clone or create the project directory:**
    ```bash
-   mkdir yt-downloader
-   cd yt-downloader
+   mkdir tubekeep
+   cd tubekeep
    ```
 
 2. **Install backend dependencies:**

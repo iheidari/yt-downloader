@@ -1,4 +1,4 @@
-# Agent Instructions for yt-downloader
+# Agent Instructions for Tubekeep
 
 This is a full-stack YouTube video downloader application with a React frontend and Node.js/Express backend.
 

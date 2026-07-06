@@ -1,5 +1,5 @@
 {
-  "name": "yt-downloader-backend",
+  "name": "tubekeep-backend",
   "version": "1.0.0",
   "description": "Tubekeep backend",
   "main": "src/server.js",
