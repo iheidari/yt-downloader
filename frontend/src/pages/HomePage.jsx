@@ -18,10 +18,13 @@ function HomePage() {
         <div className="mt-stack-md flex justify-center">
           <Link
             to="/downloads"
-            className="inline-flex items-center gap-2 text-secondary hover:text-primary font-label-md text-label-md transition-colors group"
+            className="inline-flex items-center gap-2 text-muted hover:text-ink font-label-md text-label-md transition-colors group"
           >
-            View your downloads ({total})
-            <span className="material-symbols-outlined group-hover:translate-x-1 transition-transform">
+            Your downloads
+            <span className="bg-tint text-ink rounded-full px-2.5 py-0.5 text-[12px] font-semibold">
+              {total}
+            </span>
+            <span className="material-symbols-outlined text-[18px] text-faint group-hover:translate-x-1 transition-transform">
               arrow_forward
             </span>
           </Link>

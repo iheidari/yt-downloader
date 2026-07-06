@@ -152,7 +152,15 @@ function DownloadPage() {
     )
   }
 
-  return <ProgressBar progress={progress} />
+  return (
+    <ProgressBar
+      progress={progress}
+      title={startParams.title}
+      thumbnail={startParams.thumbnail}
+      type={startParams.type}
+      onCancel={() => navigate('/', { replace: true })}
+    />
+  )
 }
 
 export default DownloadPage

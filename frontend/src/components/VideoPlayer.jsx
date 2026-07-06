@@ -1,9 +1,10 @@
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useHistory } from '../context/useHistory'
 import { usePlayer } from '../context/usePlayer'
 import { useShareLink } from '../hooks/useShareLink'
 import { fileUrl, formatFileSize, mediaKind } from '../lib/media'
 import BackLink from './BackLink'
+import MoveToCloud from './MoveToCloud'
 import PlayerStage from './PlayerStage'
 
 function VideoPlayer({ download, apiUrl }) {
@@ -34,89 +35,77 @@ function VideoPlayer({ download, apiUrl }) {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <BackLink />
+      <BackLink to="/downloads" label="Back to downloads" />
 
       <div className="space-y-stack-md">
         {/* Player area — hosts the shared, persistent media element. */}
         <PlayerStage />
 
         {/* Metadata + actions */}
-        <div className="bg-surface p-6 rounded-xl border border-surface-variant">
-          <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
+        <div>
+          <div className="flex flex-col md:flex-row md:items-start justify-between gap-5">
             <div className="min-w-0">
               <h1
-                className="font-headline-lg text-headline-lg mb-2 break-words"
+                className="font-bold text-[24px] leading-[1.2] tracking-[-0.02em] text-ink mb-2 break-words"
                 title={download.title}
               >
                 {download.title}
               </h1>
-              <p className="text-on-surface-variant flex items-center gap-2 font-body-md text-body-md">
-                <span className="material-symbols-outlined text-[18px]">calendar_today</span>
-                Downloaded on {formatDate(download.createdAt)}
+              <p className="text-muted flex items-center gap-2 text-[13px]">
+                <span className="material-symbols-outlined text-[16px]">calendar_today</span>
+                Downloaded {formatDate(download.createdAt)}
               </p>
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
-              <span className="px-3 py-1 bg-surface-container-high rounded-full font-label-sm text-label-sm">
+            <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
+              <span className="px-2.5 py-1.5 bg-tint text-muted rounded-full font-semibold text-[11.5px]">
                 {formatFileSize(download.size)}
               </span>
               {ext ? (
-                <span className="px-3 py-1 bg-surface-container-high rounded-full font-label-sm text-label-sm">
+                <span className="px-2.5 py-1.5 bg-tint text-muted rounded-full font-semibold text-[11.5px]">
                   {ext}
                 </span>
               ) : null}
-              <span className="px-3 py-1 bg-surface-container-high rounded-full font-label-sm text-label-sm uppercase">
+              <span className="px-2.5 py-1.5 bg-tint text-muted rounded-full font-semibold text-[11.5px] uppercase">
                 {isAudio ? 'Audio' : 'Video'}
               </span>
             </div>
           </div>
 
-          <div className="grid gap-4 border-t border-surface-variant pt-6 grid-cols-[repeat(auto-fit,minmax(140px,1fr))]">
+          <div className="flex flex-wrap items-center gap-2.5 mt-6 pt-6 border-t border-line">
             <button
               type="button"
               onClick={share}
-              className="flex items-center justify-center gap-2 bg-primary text-on-primary rounded-lg font-label-md text-label-md hover:bg-primary-container transition-colors active:scale-95 py-4 px-4"
+              className="flex items-center gap-2 bg-fill text-on-fill rounded-[10px] font-semibold text-[14px] hover:opacity-90 active:scale-95 transition-all py-3 px-5"
             >
-              <span className="material-symbols-outlined">{copied ? 'check' : 'share'}</span>
+              <span className="material-symbols-outlined text-[19px]">
+                {copied ? 'check' : 'ios_share'}
+              </span>
               {copied ? 'Link copied' : 'Share'}
             </button>
 
-            {download.url ? (
-              <Link
-                to={`/info?url=${encodeURIComponent(download.url)}`}
-                className="flex items-center justify-center gap-2 bg-secondary-container text-on-secondary-container border border-outline-variant rounded-lg font-label-md text-label-md hover:bg-surface-container-high transition-colors active:scale-95 py-4 px-4"
-              >
-                <span className="material-symbols-outlined">refresh</span>
-                Redownload
-              </Link>
-            ) : (
-              <a
-                href={downloadUrl}
-                download={download.filename}
-                className="flex items-center justify-center gap-2 bg-secondary-container text-on-secondary-container border border-outline-variant rounded-lg font-label-md text-label-md hover:bg-surface-container-high transition-colors active:scale-95 py-4 px-4"
-              >
-                <span className="material-symbols-outlined">download</span>
-                Save file
-              </a>
-            )}
+            <a
+              href={downloadUrl}
+              download={download.filename}
+              className="flex items-center gap-2 bg-surface text-ink border border-line2 rounded-[10px] font-semibold text-[14px] hover:bg-tint active:scale-95 transition-all py-3 px-5"
+            >
+              <span className="material-symbols-outlined text-[19px]">download</span>
+              Save file
+            </a>
 
-            {download.url ? (
-              <a
-                href={download.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 border border-outline-variant text-on-surface-variant rounded-lg font-label-md text-label-md hover:bg-surface-container-high transition-colors active:scale-95 py-4 px-4"
-              >
-                <span className="material-symbols-outlined">open_in_new</span>
-                View source
-              </a>
-            ) : null}
+            {!download.moved && (
+              <MoveToCloud
+                download={download}
+                downloadHref={downloadUrl}
+                onMoved={() => navigate('/downloads')}
+              />
+            )}
 
             <button
               type="button"
               onClick={handleDelete}
-              className="flex items-center justify-center gap-2 border border-error/30 text-error rounded-lg font-label-md text-label-md hover:bg-error-container/50 transition-colors active:scale-95 py-4 px-4"
+              className="flex items-center gap-2 bg-transparent text-pop rounded-[10px] font-semibold text-[14px] hover:bg-pop/5 active:scale-95 transition-all py-3 px-4 ml-auto"
             >
-              <span className="material-symbols-outlined">delete</span>
+              <span className="material-symbols-outlined text-[19px]">delete</span>
               Delete
             </button>
           </div>

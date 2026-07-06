@@ -85,40 +85,44 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
       <BackLink />
 
       {/* Video Header Section */}
-      <section className="mb-stack-lg">
-        <div className="bg-surface-container-lowest border border-surface-variant rounded-xl overflow-hidden flex flex-col md:flex-row gap-6 p-4">
-          <div className="relative aspect-video md:w-80 flex-shrink-0">
+      <section className="mb-stack-md">
+        <div className="flex flex-col md:flex-row gap-6 md:items-center">
+          <div className="relative w-full md:w-[280px] aspect-video flex-shrink-0">
             <img
               src={info.thumbnail}
               alt={info.title}
-              className="w-full h-full object-cover rounded-lg shadow-sm"
+              className="w-full h-full object-cover rounded-xl"
             />
             {info.duration ? (
-              <div className="absolute bottom-2 right-2 bg-black/80 text-white text-[10px] px-1.5 py-0.5 rounded font-bold">
+              <div className="absolute bottom-2 right-2 bg-black/80 text-white text-[11px] px-1.5 py-0.5 rounded font-bold">
                 {formatDuration(info.duration)}
               </div>
             ) : null}
           </div>
           <div className="flex flex-col justify-center gap-3 min-w-0">
-            <div className="flex gap-2 items-center flex-wrap">
-              <span className="bg-primary text-on-primary text-[10px] px-2 py-0.5 rounded-full font-bold tracking-wider">
+            <div className="flex gap-2.5 items-center flex-wrap">
+              <span className="bg-fill text-on-fill text-[10px] px-2.5 py-1 rounded-full font-bold tracking-[0.06em]">
                 {sourceName.toUpperCase()}
               </span>
               {info.uploadDate ? (
-                <span className="text-label-sm text-secondary">Uploaded {info.uploadDate}</span>
+                <span className="font-label-md text-[12.5px] text-faint">
+                  Uploaded {info.uploadDate}
+                </span>
               ) : null}
             </div>
-            <h2 className="font-headline-md text-headline-md text-on-surface leading-tight">
+            <h2 className="font-bold text-[26px] leading-[1.15] tracking-[-0.02em] text-ink">
               {info.title}
             </h2>
             {info.uploader ? (
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-secondary">
-                  <span className="material-symbols-outlined">account_circle</span>
+              <div className="flex items-center gap-2.5">
+                <div className="w-[34px] h-[34px] rounded-full bg-line flex items-center justify-center text-muted">
+                  <span className="material-symbols-outlined text-[22px]">person</span>
                 </div>
                 <div>
-                  <p className="font-label-md text-label-md text-on-surface">{info.uploader}</p>
-                  <p className="text-label-sm text-secondary">Source: {sourceName}</p>
+                  <p className="font-semibold text-[13.5px] text-ink leading-tight">
+                    {info.uploader}
+                  </p>
+                  <p className="text-[12px] text-faint leading-tight">Source: {sourceName}</p>
                 </div>
               </div>
             ) : null}
@@ -126,35 +130,51 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
         </div>
       </section>
 
-      {/* Keep-forever toggle — applies to whichever format is downloaded next */}
-      <label className="mb-stack-md flex items-center gap-3 bg-surface-container-lowest border border-surface-variant rounded-xl p-4 cursor-pointer select-none hover:shadow-sm transition-shadow">
-        <input
-          type="checkbox"
-          checked={keep}
-          onChange={(e) => setKeep(e.target.checked)}
-          className="w-5 h-5 accent-primary flex-shrink-0"
-        />
-        <span className="material-symbols-outlined text-primary">push_pin</span>
-        <span className="min-w-0">
-          <span className="block font-label-md text-label-md text-on-surface">Keep forever</span>
-          <span className="block font-label-sm text-label-sm text-secondary">
-            Don't auto-delete this download after 24 hours.
+      {/* Keep-forever switch — applies to whichever format is downloaded next */}
+      <button
+        type="button"
+        role="switch"
+        aria-checked={keep}
+        onClick={() => setKeep((v) => !v)}
+        className="w-full mb-stack-md flex items-center gap-3.5 bg-surface border border-line rounded-xl px-4 py-3.5 text-left"
+      >
+        <span
+          className="material-symbols-outlined text-ink text-[22px]"
+          style={{ fontVariationSettings: "'FILL' 1, 'wght' 500" }}
+        >
+          push_pin
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="block font-semibold text-[14px] text-ink">Keep forever</span>
+          <span className="block text-[12.5px] text-muted">
+            Skip the 24-hour auto-cleanup for this download.
           </span>
         </span>
-      </label>
+        <span
+          className={`w-11 h-[26px] rounded-full relative flex-shrink-0 transition-colors ${
+            keep ? 'bg-pop' : 'bg-line2'
+          }`}
+        >
+          <span
+            className={`absolute top-[3px] w-5 h-5 rounded-full bg-surface transition-all ${
+              keep ? 'left-[21px]' : 'left-[3px]'
+            }`}
+          />
+        </span>
+      </button>
 
       {/* Options Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-stack-md">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-stack-lg">
         {/* Video Options */}
-        <section className="bg-surface-container-lowest border border-surface-variant rounded-xl p-6 shadow-sm space-y-4">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="material-symbols-outlined text-primary">movie</span>
-            <h3 className="font-headline-md text-headline-md">Video Options</h3>
+        <section>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="material-symbols-outlined text-ink text-[20px]">movie</span>
+            <h3 className="font-bold text-[16px] text-ink">Video</h3>
           </div>
           {videoOptions.length === 0 ? (
-            <p className="text-label-sm text-secondary">No video formats available.</p>
+            <p className="text-label-sm text-muted py-4">No video formats available.</p>
           ) : (
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col">
               {videoOptions.map((format, idx) => {
                 const h = getHeight(format.resolution)
                 const isStarting = startingFormat === format.formatId
@@ -162,25 +182,28 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
                 return (
                   <div
                     key={format.formatId}
-                    className="flex items-center justify-between p-4 bg-surface border border-surface-variant rounded-xl hover:shadow-sm transition-shadow"
+                    className="flex items-center justify-between gap-3 py-4 border-b border-line"
                   >
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div
-                        className={`px-3 py-1 rounded-lg font-bold text-label-sm ${
-                          isBest
-                            ? 'bg-primary/10 text-primary'
-                            : 'bg-surface-container-high text-secondary'
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      <span
+                        className={`min-w-[52px] text-center rounded-lg font-bold text-[13px] px-2 py-[7px] ${
+                          isBest ? 'bg-fill text-on-fill' : 'bg-tint text-muted'
                         }`}
                       >
                         {heightLabel(format.resolution)}
-                      </div>
+                      </span>
                       <div className="min-w-0">
-                        <p className="font-label-md text-label-md text-on-surface truncate">
-                          {qualityName(h)} • {(format.ext || 'mp4').toUpperCase()}
+                        <p className="font-semibold text-[14px] text-ink truncate">
+                          {qualityName(h)}
                         </p>
-                        <p className="text-label-sm text-secondary">
-                          Size: {formatFileSize(format.filesize)}
-                          {format._type === 'video' ? ' • merges audio' : ''}
+                        <p className="text-[12px] text-muted">
+                          {(format.ext || 'mp4').toUpperCase()} · {formatFileSize(format.filesize)}
+                          {isBest ? (
+                            <>
+                              {' · '}
+                              <span className="text-pop font-semibold">best</span>
+                            </>
+                          ) : null}
                         </p>
                       </div>
                     </div>
@@ -188,16 +211,20 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
                       type="button"
                       onClick={() => onDownload(format.formatId, format._type, keep)}
                       disabled={startingFormat !== null}
-                      className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md text-label-md active:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                      className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-[9px] font-semibold text-[12.5px] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex-shrink-0 ${
+                        isBest
+                          ? 'bg-fill text-on-fill'
+                          : 'bg-surface text-ink border border-line2 hover:bg-tint'
+                      }`}
                     >
                       <span
-                        className={`material-symbols-outlined text-[18px] ${
+                        className={`material-symbols-outlined text-[16px] ${
                           isStarting ? 'animate-spin' : ''
                         }`}
                       >
                         {isStarting ? 'progress_activity' : 'download'}
                       </span>
-                      {isStarting ? 'Starting…' : 'Download'}
+                      {isStarting ? 'Starting…' : 'Get'}
                     </button>
                   </div>
                 )
@@ -207,15 +234,15 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
         </section>
 
         {/* Audio Only */}
-        <section className="bg-surface-container-lowest border border-surface-variant rounded-xl p-6 shadow-sm space-y-4">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="material-symbols-outlined text-primary">audiotrack</span>
-            <h3 className="font-headline-md text-headline-md">Audio Only</h3>
+        <section>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="material-symbols-outlined text-ink text-[20px]">graphic_eq</span>
+            <h3 className="font-bold text-[16px] text-ink">Audio</h3>
           </div>
           {audioOptions.length === 0 ? (
-            <p className="text-label-sm text-secondary">No audio formats available.</p>
+            <p className="text-label-sm text-muted py-4">No audio formats available.</p>
           ) : (
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col">
               {audioOptions.map((format, idx) => {
                 const isStarting = startingFormat === format.formatId
                 const isBest = idx === 0
@@ -223,26 +250,28 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
                 return (
                   <div
                     key={format.formatId}
-                    className="flex items-center justify-between p-4 bg-surface border border-surface-variant rounded-xl hover:shadow-sm transition-shadow"
+                    className="flex items-center justify-between gap-3 py-4 border-b border-line"
                   >
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div
-                        className={`px-3 py-1 rounded-lg font-bold text-label-sm ${
-                          isBest
-                            ? 'bg-tertiary-container text-on-tertiary'
-                            : 'bg-surface-container-high text-secondary'
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      <span
+                        className={`min-w-[52px] text-center rounded-lg font-bold text-[13px] px-2 py-[7px] ${
+                          isBest ? 'bg-fill text-on-fill' : 'bg-tint text-muted'
                         }`}
                       >
                         {abr ? `${abr}k` : (format.ext || 'aud').toUpperCase()}
-                      </div>
+                      </span>
                       <div className="min-w-0">
-                        <p className="font-label-md text-label-md text-on-surface truncate">
-                          {isBest ? 'High Quality' : 'Standard'} •{' '}
-                          {(format.ext || 'm4a').toUpperCase()}
+                        <p className="font-semibold text-[14px] text-ink truncate">
+                          {isBest ? 'High Quality' : 'Standard'}
                         </p>
-                        <p className="text-label-sm text-secondary">
-                          Size: {formatFileSize(format.filesize)}
-                          {format.acodec ? ` • ${format.acodec}` : ''}
+                        <p className="text-[12px] text-muted">
+                          {(format.ext || 'm4a').toUpperCase()} · {formatFileSize(format.filesize)}
+                          {isBest ? (
+                            <>
+                              {' · '}
+                              <span className="text-pop font-semibold">best</span>
+                            </>
+                          ) : null}
                         </p>
                       </div>
                     </div>
@@ -250,25 +279,23 @@ function FormatSelector({ info, onDownload, startingFormat = null }) {
                       type="button"
                       onClick={() => onDownload(format.formatId, 'audio', keep)}
                       disabled={startingFormat !== null}
-                      className="flex items-center gap-2 border border-primary text-primary px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-primary/5 active:opacity-80 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                      className="flex items-center gap-1.5 bg-surface text-ink border border-ink px-3.5 py-2.5 rounded-[9px] font-semibold text-[12.5px] hover:bg-tint active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex-shrink-0"
                     >
                       <span
-                        className={`material-symbols-outlined text-[18px] ${
+                        className={`material-symbols-outlined text-[16px] ${
                           isStarting ? 'animate-spin' : ''
                         }`}
                       >
                         {isStarting ? 'progress_activity' : 'download'}
                       </span>
-                      {isStarting ? 'Starting…' : 'Download'}
+                      {isStarting ? 'Starting…' : 'Get'}
                     </button>
                   </div>
                 )
               })}
-              <div className="mt-4 p-4 rounded-xl bg-surface-container-low border border-dashed border-outline-variant flex items-center gap-4">
-                <span className="material-symbols-outlined text-secondary">info</span>
-                <p className="text-label-sm text-secondary">
-                  Audio extraction may take a few moments depending on server load.
-                </p>
+              <div className="flex items-center gap-2.5 py-3.5 text-faint">
+                <span className="material-symbols-outlined text-[18px]">info</span>
+                <p className="text-[12px]">Audio extraction may take a moment under load.</p>
               </div>
             </div>
           )}

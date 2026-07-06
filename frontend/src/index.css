@@ -1,11 +1,14 @@
 body {
   margin: 0;
-  background: #fcf9f8;
-  color: #1c1b1b;
+  background: rgb(var(--bg));
+  color: rgb(var(--ink));
   font-family: "Space Grotesk", system-ui, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  transition:
+    background 0.25s ease,
+    color 0.25s ease;
 }
 
 #root {
