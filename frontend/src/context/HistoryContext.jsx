@@ -104,16 +104,19 @@ export function HistoryProvider({ children }) {
     })
     if (decorated.url) {
       // A completed re-download supersedes any older expired row for the same
-      // source URL. Hard-delete those stale rows server-side (via the existing
-      // permanent-delete endpoint) so the mount-time sync() can't resurrect them
-      // on reload, then drop them locally. Moved-to-cloud rows live in `history`,
-      // not `expired`, so they are left untouched.
-      for (const stale of expiredRef.current) {
-        if (stale.url === decorated.url && stale.downloadId !== decorated.downloadId) {
-          forgetOnServer(stale.downloadId)
-        }
-      }
-      setExpired((prev) => prev.filter((d) => d.url !== decorated.url))
+      // source URL. Compute that stale set once, then (a) best-effort hard-delete
+      // it server-side via the existing permanent-delete endpoint so the
+      // mount-time sync() won't resurrect it on reload, and (b) drop it locally.
+      // The delete is fire-and-forget, so a failed request can still let the row
+      // reappear on the next sync. The downloadId guard keeps us from deleting the
+      // freshly-completed row itself. Moved-to-cloud rows live in `history`, not
+      // `expired`, so they are left untouched.
+      const stale = expiredRef.current.filter(
+        (d) => d.url === decorated.url && d.downloadId !== decorated.downloadId,
+      )
+      for (const d of stale) forgetOnServer(d.downloadId)
+      const staleIds = new Set(stale.map((d) => d.downloadId))
+      setExpired((prev) => prev.filter((d) => !staleIds.has(d.downloadId)))
     }
   }, [])
 
