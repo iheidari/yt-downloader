@@ -38,6 +38,7 @@ export function HistoryProvider({ children }) {
   const [history, setHistory] = useState(() => loadKey(HISTORY_STORAGE_KEY))
   const [expired, setExpired] = useState(() => loadKey(EXPIRED_STORAGE_KEY))
   const historyRef = useRef(history)
+  const expiredRef = useRef(expired)
 
   useEffect(() => {
     historyRef.current = history
@@ -49,6 +50,7 @@ export function HistoryProvider({ children }) {
   }, [history])
 
   useEffect(() => {
+    expiredRef.current = expired
     try {
       localStorage.setItem(EXPIRED_STORAGE_KEY, JSON.stringify(expired))
     } catch (err) {
@@ -100,6 +102,18 @@ export function HistoryProvider({ children }) {
       const without = prev.filter((d) => d.downloadId !== decorated.downloadId)
       return [decorated, ...without]
     })
+    if (decorated.url) {
+      // A completed re-download supersedes any older expired row for the same
+      // source URL. Hard-delete those stale rows server-side (via the existing
+      // permanent-delete endpoint) so the mount-time sync() can't resurrect them
+      // on reload. Moved-to-cloud rows live in `history`, not `expired`, so they
+      // are left untouched.
+      for (const stale of expiredRef.current) {
+        if (stale.url === decorated.url && stale.downloadId !== decorated.downloadId) {
+          forgetOnServer(stale.downloadId)
+        }
+      }
+    }
     setExpired((prev) => {
       if (!decorated.url) return prev
       return prev.filter((d) => d.url !== decorated.url)
