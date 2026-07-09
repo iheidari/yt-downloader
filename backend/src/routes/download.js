@@ -2,7 +2,12 @@ const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const { downloadVideo, downloadAudio, isSupportedUrl } = require('../services/ytdlp');
-const { saveDownloadMetadata, getDiskUsage, hasRoomFor } = require('../utils/storage');
+const {
+  saveDownloadMetadata,
+  getDiskUsage,
+  hasRoomFor,
+  DISK_SIZE_MULTIPLIER,
+} = require('../utils/storage');
 const { initSSE } = require('../utils/sse');
 
 // Human-readable bytes for the disk-full SSE error message. Backend has no
@@ -96,14 +101,17 @@ router.get('/progress/:downloadId', async (req, res) => {
       if (!hasRoomFor(free, wantBytes)) {
         finished = true;
         clearInterval(heartbeatInterval);
+        // Report the margined requirement (same multiplier hasRoomFor uses) so
+        // the "need ~X" figure can't drift from the actual fit check.
+        const needBytes = wantBytes * DISK_SIZE_MULTIPLIER;
         console.warn(
-          `⚠️  Refusing download ${downloadId}: needs ~${formatBytes(wantBytes * 2)}, ` +
+          `⚠️  Refusing download ${downloadId}: needs ~${formatBytes(needBytes)}, ` +
             `${formatBytes(free)} free`,
         );
         sendEvent({
           type: 'error',
           downloadId,
-          error: `Not enough disk space — need ~${formatBytes(wantBytes * 2)}, have ${formatBytes(free)} free`,
+          error: `Not enough disk space — need ~${formatBytes(needBytes)}, have ${formatBytes(free)} free`,
         });
         res.end();
         return;
