@@ -8,7 +8,7 @@ import { saveStartParams } from '../lib/media'
 function InfoPage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
-  const { apiUrl } = useHistory()
+  const { apiUrl, startPending } = useHistory()
   const url = searchParams.get('url')
 
   const [info, setInfo] = useState(null)
@@ -70,6 +70,17 @@ function InfoPage() {
       // Persist per-tab so a reload of the download page can resume the SSE
       // (and keep the "Keep forever" choice) instead of losing router state.
       saveStartParams(downloadId, startState)
+      // Write a "Downloading…" row now so the file is findable in the Downloads
+      // list even if the user navigates away before the SSE completes. It
+      // upgrades in place to a completed card on completion (or "Failed" on error).
+      startPending({
+        downloadId,
+        url: info.originalUrl,
+        type,
+        title: info.title,
+        thumbnail: info.thumbnail,
+        createdAt: new Date().toISOString(),
+      })
       navigate(`/download/${downloadId}`, { replace: true, state: startState })
     } catch (err) {
       setError(err.message || 'Failed to start download')

@@ -79,11 +79,20 @@ export function HistoryProvider({ children }) {
         // Any local moved rows the server no longer knows about (moved before we
         // persisted them server-side) still live on so their link isn't lost.
         const serverIds = new Set(all.map((d) => d.downloadId))
-        const preservedMoved = loadKey(HISTORY_STORAGE_KEY).filter(
-          (d) => d.moved && !serverIds.has(d.downloadId),
+        const localRows = loadKey(HISTORY_STORAGE_KEY)
+        const preservedMoved = localRows.filter((d) => d.moved && !serverIds.has(d.downloadId))
+        // Pending/failed rows are written client-side at click time and aren't on
+        // the server yet, so a reload mid-download would otherwise wipe them.
+        // Keep the ones the server doesn't know about; a completed one reappears
+        // in `active` (its id is in serverIds) and supersedes the placeholder.
+        const preservedPending = localRows.filter(
+          (d) =>
+            (d.status === 'downloading' || d.status === 'failed') && !serverIds.has(d.downloadId),
         )
 
-        setHistory([...active, ...movedFromServer, ...preservedMoved].sort(sortByDate))
+        setHistory(
+          [...active, ...movedFromServer, ...preservedMoved, ...preservedPending].sort(sortByDate),
+        )
         setExpired(expiredFromServer)
       } catch (err) {
         console.error('❌ Server sync error:', err)
@@ -118,6 +127,37 @@ export function HistoryProvider({ children }) {
       const staleIds = new Set(stale.map((d) => d.downloadId))
       setExpired((prev) => prev.filter((d) => !staleIds.has(d.downloadId)))
     }
+  }, [])
+
+  // Write a placeholder row the moment a download starts (before the SSE runs),
+  // so it shows up in the Downloads list immediately and survives in-session
+  // navigation. Deduped by downloadId, prepended; a later addDownload on
+  // completion replaces the whole record (dropping the status) so it upgrades
+  // to a normal completed card. Not decorated — it has no filename yet.
+  const startPending = useCallback((row) => {
+    setHistory((prev) => {
+      const without = prev.filter((d) => d.downloadId !== row.downloadId)
+      return [{ ...row, status: 'downloading' }, ...without]
+    })
+  }, [])
+
+  // Flip a pending row to "failed" when the SSE errors. Updates in place if the
+  // placeholder is present (the common path); otherwise inserts a failed row
+  // from whatever start fields the caller has, so the failure is never silent.
+  const markFailed = useCallback((downloadId, fallback = {}) => {
+    setHistory((prev) => {
+      if (prev.some((d) => d.downloadId === downloadId)) {
+        return prev.map((d) => (d.downloadId === downloadId ? { ...d, status: 'failed' } : d))
+      }
+      return [{ ...fallback, downloadId, status: 'failed' }, ...prev]
+    })
+  }, [])
+
+  // Drop a pending/failed row locally only — no server DELETE and no move to the
+  // expired list, since its file may never have landed server-side. The history
+  // effect persists the removal to localStorage.
+  const dropLocal = useCallback((downloadId) => {
+    setHistory((prev) => prev.filter((d) => d.downloadId !== downloadId))
   }, [])
 
   const removeDownload = useCallback(async (downloadId) => {
@@ -189,6 +229,9 @@ export function HistoryProvider({ children }) {
       expired,
       apiUrl: HISTORY_API_URL,
       addDownload,
+      startPending,
+      markFailed,
+      dropLocal,
       removeDownload,
       forgetExpired,
       setKept,
@@ -200,6 +243,9 @@ export function HistoryProvider({ children }) {
       history,
       expired,
       addDownload,
+      startPending,
+      markFailed,
+      dropLocal,
       removeDownload,
       forgetExpired,
       setKept,
