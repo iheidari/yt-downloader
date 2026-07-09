@@ -12,6 +12,7 @@ tubekeep/
 │   │   ├── routes/        # API endpoints
 │   │   │   ├── info.js         # Video info endpoint
 │   │   │   ├── download.js     # Download endpoint
+│   │   │   ├── disk.js         # Server disk-usage endpoint
 │   │   │   └── files.js        # File serving endpoints
 │   │   ├── services/      # Business logic
 │   │   │   ├── ytdlp.js        # yt-dlp wrapper
@@ -195,9 +196,19 @@ Content-Type: application/json
 
 ### Download Progress (SSE)
 ```
-GET /api/download/progress/:downloadId?url=...&formatId=...&type=...
+GET /api/download/progress/:downloadId?url=...&formatId=...&type=...&filesize=...
 ```
-Stream real-time download progress.
+Stream real-time download progress. If the optional `filesize` (the selected
+format's bytes) fails the disk-space margin, the stream emits an `error` event
+and never spawns yt-dlp.
+
+### Server Disk Usage
+```
+GET /api/disk
+```
+Returns `{ total, free, used }` (bytes) for the filesystem holding the downloads
+directory, plus the fit knobs (`sizeMultiplier`, `headroomBytes`) the format
+screen uses to disable formats that wouldn't fit.
 
 ### List Downloads
 ```
