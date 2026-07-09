@@ -4,18 +4,17 @@ import ProgressBar from '../components/ProgressBar'
 import { useHistory } from '../context/useHistory'
 import { clearStartParams, fetchDownloads, loadStartParams } from '../lib/media'
 
-const WATCH_POLL_MS = 2000
-const WATCH_TIMEOUT_MS = 5 * 60 * 1000
-
 function DownloadPage() {
   const { downloadId } = useParams()
   const location = useLocation()
   const navigate = useNavigate()
-  const { apiUrl, addDownload, markFailed } = useHistory()
+  const { apiUrl, addDownload, markFailed, cancelDownload } = useHistory()
 
-  // Start params normally arrive via router state, but a reload of /download/:id
-  // wipes that — recover them from sessionStorage (per-tab, written at start)
-  // so the SSE resumes and the "Keep forever" choice isn't silently dropped.
+  // Start params (title/thumbnail/type + the "Keep forever" choice) come via
+  // router state, recovered from sessionStorage on a reload. They're only used
+  // for the local display + the failed-row fallback now — the download itself
+  // runs server-side and the SSE is a pure observer, so we can attach to an
+  // in-flight job (new tab / reload / cold visit) with just the downloadId.
   const stateStart = location.state?.start ? location.state : null
   const startParams = useMemo(
     () => stateStart || loadStartParams(downloadId),
@@ -26,19 +25,18 @@ function DownloadPage() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    // Defer side-effect setup to a microtask so React StrictMode's
-    // synchronous double-mount cleanup cancels the duplicate before it runs.
-    // Without this, opening the EventSource on mount #1 + closing on its
-    // cleanup leaves no live connection (and would also spawn yt-dlp twice).
+    // Defer side-effect setup to a microtask so React StrictMode's synchronous
+    // double-mount cleanup cancels the duplicate before it runs.
     let eventSource = null
-    let pollCancelled = false
-    let pollTimer = null
+    let cancelled = false
+
     // Reconcile against the file list: if the download is present (and not
-    // expired), adopt it and jump to the player. Shared by the SSE onerror
-    // recovery and the no-start-params poll fallback.
+    // expired), adopt it and jump to the player. Used to recover when the SSE
+    // reports "not found"/error but the file actually landed (job swept after
+    // completion, or a transient connection drop).
     const resolveIfReady = async () => {
       const all = await fetchDownloads(apiUrl)
-      if (pollCancelled) return false
+      if (cancelled) return false
       const found = all.find((d) => d.downloadId === downloadId && !d.expired)
       if (!found) return false
       addDownload(found)
@@ -46,84 +44,67 @@ function DownloadPage() {
       navigate(`/play/${downloadId}`, { replace: true })
       return true
     }
+
+    const fail = (message) => {
+      if (cancelled) return
+      setError(message)
+      // Flip the pending Downloads-list row to "Failed" so it stops spinning and
+      // offers Redownload/Dismiss. Pass the known row fields (undefined without
+      // start params — markFailed updates in place when the row already exists).
+      markFailed(downloadId, {
+        url: startParams?.url,
+        type: startParams?.type,
+        title: startParams?.title,
+        thumbnail: startParams?.thumbnail,
+      })
+      clearStartParams(downloadId)
+    }
+
     const startTimer = setTimeout(() => {
-      if (startParams) {
-        const qs = new URLSearchParams({
-          url: startParams.url,
-          formatId: startParams.formatId,
-          type: startParams.type,
-          title: startParams.title || '',
-          thumbnail: startParams.thumbnail || '',
-          keep: startParams.keep ? 'true' : 'false',
-        })
+      // Pure observer: no query params — the job already owns them server-side.
+      eventSource = new EventSource(`${apiUrl}/api/download/progress/${downloadId}`)
 
-        eventSource = new EventSource(
-          `${apiUrl}/api/download/progress/${downloadId}?${qs.toString()}`,
-        )
-
-        eventSource.onmessage = (event) => {
-          const data = JSON.parse(event.data)
-          if (data.type === 'ping') return
-          if (data.type === 'progress') {
-            setProgress(data.progress)
-          } else if (data.type === 'complete') {
-            setProgress(100)
-            addDownload(data.data)
-            clearStartParams(downloadId)
-            eventSource.close()
-            navigate(`/play/${downloadId}`, { replace: true })
-          } else if (data.type === 'error') {
-            setError(data.error || 'Download failed')
-            // Flip the pending Downloads-list row to "Failed" so it stops
-            // spinning and offers Redownload/Dismiss instead. Pass only the
-            // row fields (not the whole startParams) so the fallback-insert
-            // path produces the same row shape startPending writes.
-            markFailed(downloadId, {
-              url: startParams.url,
-              type: startParams.type,
-              title: startParams.title,
-              thumbnail: startParams.thumbnail,
-            })
-            clearStartParams(downloadId)
-            eventSource.close()
-          }
-        }
-
-        eventSource.onerror = async () => {
+      eventSource.onmessage = async (event) => {
+        const data = JSON.parse(event.data)
+        if (data.type === 'ping' || data.type === 'started') return
+        if (data.type === 'progress') {
+          setProgress(data.progress)
+        } else if (data.type === 'complete') {
+          setProgress(100)
+          addDownload(data.data)
+          clearStartParams(downloadId)
           eventSource.close()
-          // onerror also fires on transient proxy blips / a dropped keep-alive,
-          // even when the download finished server-side. Reconcile against the
-          // file list before declaring failure.
+          navigate(`/play/${downloadId}`, { replace: true })
+        } else if (data.type === 'error') {
+          eventSource.close()
+          // The download may actually have finished (e.g. the job was swept, or
+          // a stale "not found" after a completed download): reconcile against
+          // the file list before declaring failure.
           try {
             if (await resolveIfReady()) return
           } catch {
-            // fall through to the error state
+            // fall through to the failure state
           }
-          if (!pollCancelled) setError('Download connection lost')
+          fail(data.error || 'Download failed')
         }
-      } else {
-        const start = Date.now()
-        const poll = async () => {
-          if (pollCancelled) return
-          try {
-            if (await resolveIfReady()) return
-            if (Date.now() - start > WATCH_TIMEOUT_MS) {
-              setError('Download not found or timed out. It may have failed.')
-              return
-            }
-          } catch (err) {
-            console.error('❌ Poll error:', err)
-          }
-          pollTimer = setTimeout(poll, WATCH_POLL_MS)
+      }
+
+      eventSource.onerror = async () => {
+        eventSource.close()
+        // A transient proxy blip / dropped keep-alive can fire onerror even when
+        // the download finished server-side. Reconcile before declaring failure.
+        try {
+          if (await resolveIfReady()) return
+        } catch {
+          // fall through
         }
-        poll()
+        if (!cancelled) setError((prev) => prev || 'Download connection lost')
       }
     }, 0)
 
     return () => {
       clearTimeout(startTimer)
-      pollCancelled = true
-      if (pollTimer) clearTimeout(pollTimer)
+      cancelled = true
       if (eventSource) eventSource.close()
     }
   }, [apiUrl, downloadId, startParams, addDownload, markFailed, navigate])
@@ -146,29 +127,18 @@ function DownloadPage() {
     )
   }
 
-  if (!startParams) {
-    return (
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-surface-container-lowest border border-surface-variant rounded-xl p-12 text-center">
-          <span className="material-symbols-outlined animate-spin text-[40px] text-primary mb-3 block">
-            progress_activity
-          </span>
-          <p className="font-body-md text-body-md text-secondary">Download in progress…</p>
-          <p className="font-label-sm text-label-sm text-secondary mt-2">
-            Checking back every few seconds.
-          </p>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <ProgressBar
       progress={progress}
-      title={startParams.title}
-      thumbnail={startParams.thumbnail}
-      type={startParams.type}
-      onCancel={() => navigate('/', { replace: true })}
+      title={startParams?.title}
+      thumbnail={startParams?.thumbnail}
+      type={startParams?.type}
+      onCancel={() => {
+        // Actually stop the server-side job (it no longer dies on disconnect),
+        // then leave the page.
+        cancelDownload(downloadId)
+        navigate('/', { replace: true })
+      }}
     />
   )
 }

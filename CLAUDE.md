@@ -34,9 +34,12 @@ No test framework is configured. Linting/formatting is [Biome](https://biomejs.d
 
 ### Download flow
 1. `GET /api/info?url=...` → `services/ytdlp.js` runs `yt-dlp --dump-json`, returns formats grouped into `{ video, audio, combined }`.
-2. `POST /api/download` → only mints and returns a `downloadId` (a UUID). **No download happens here.**
-3. `GET /api/download/progress/:downloadId?url=...&formatId=...&type=...` → this SSE endpoint is what actually spawns yt-dlp. It streams `started` / `progress` / `complete` / `error` events plus `ping` heartbeats every 15s (for proxy keep-alive), and writes `metadata.json` on completion.
-4. `GET /api/files/:downloadId/:filename` → serves the file with HTTP range support (in-browser seeking/streaming) and RFC 5987 `Content-Disposition` for unicode filenames. `?action=download` forces an attachment.
+2. `POST /api/download` → mints a `downloadId` (a UUID) **and starts the download job** server-side via the download manager. The parameters ride the **request body** (`url`, `formatId`, `type`, `title`, `thumbnail`, `keep`). The job runs yt-dlp to completion **independent of any client connection** — navigating away no longer aborts it. Over the concurrency cap it returns **HTTP 429** `{ success: false, error }` (the UI surfaces this inline) before any process starts.
+3. `GET /api/download/progress/:downloadId` → **pure observer SSE.** It looks the job up in the registry, replays current progress, and streams `started` / `progress` / `complete` / `error` events plus `ping` heartbeats every 15s (for proxy keep-alive). It **does not spawn a process**; disconnecting only unsubscribes (the job keeps running). Reconnecting (reload / new tab / cold visit) **attaches** to the in-flight job — no second process, no query params needed. An unknown id (e.g. after a server restart) yields a terminal `"download not found"` error.
+4. `DELETE /api/download/:downloadId` → **explicit cancel.** Aborts the running job (via its `AbortController`) and removes its partial files. Wired to the `DownloadingCard` **Dismiss** and the download page **Cancel**.
+5. `GET /api/files/:downloadId/:filename` → serves the file with HTTP range support (in-browser seeking/streaming) and RFC 5987 `Content-Disposition` for unicode filenames. `?action=download` forces an attachment.
+
+**Download manager (`services/downloadManager.js`)** — an in-memory `Map<downloadId, job>` registry. Each job holds `{ status: 'running'|'complete'|'error', progress, result, error, params, emitter, abortController }`; `emitter` is a Node `EventEmitter` the observer SSE subscribes to. On completion the job writes `metadata.json` (moved out of the route) so `/api/files`, the mount-time `sync()`, and the `DownloadPage` reconcile path all resolve the finished file. **In-memory only** — an in-flight download dies on server restart (a reconnect then gets "download not found"); terminal jobs are retained ~30 min for late reconnects, then pruned by the hourly cleanup sweep (`sweepJobs`). The concurrency cap is `MAX_CONCURRENT_DOWNLOADS` (default **3**) simultaneously-running jobs.
 
 ### yt-dlp integration (`services/ytdlp.js`) — read before touching downloads
 This file carries deliberate workarounds for YouTube's 2026-era extraction breakage. Do not "simplify" them away:
@@ -54,13 +57,14 @@ The hourly cleanup scheduler (`services/cleanup.js`, `MAX_FILE_AGE_HOURS = 24`) 
 
 **Re-download dedupe:** when a download **completes** (`addDownload` in `HistoryContext.jsx`), any older *expired* row for the same source URL is dropped from `tubekeepExpired` **and** hard-deleted server-side (`?permanent=true`) so the mount-time `sync()` can't resurrect it on reload — one current row per source. Only expired rows are matched; active and moved-to-cloud rows are left intact.
 
-**Pending/failed rows (client-only lifecycle):** downloads run server-side and finish even if the user leaves the download page, so history rows are written **at click time**, not on SSE completion. `handleDownload` (`InfoPage.jsx`) calls `startPending()` to write a `status: 'downloading'` row to `tubekeepHistory` immediately (fields: `downloadId`, `url`, `type`, `title`, `thumbnail`, `createdAt` — no `filename`/`size` yet). On SSE `complete`, `addDownload(data.data)` replaces it in place with the full completed record (which carries **no** `status`), so it renders as a normal `ActiveCard`. On SSE `error`, `markFailed()` flips it to `status: 'failed'`. `DownloadsPage` routes `status === 'downloading'` → `DownloadingCard` (spinner, links to `/download/:id`, plus a **Dismiss**) and `status === 'failed'` → `FailedCard` (Redownload + Dismiss) **before** the `ActiveCard` fallback. Both give a Dismiss because the backend **aborts the yt-dlp subprocess on client disconnect** (`download.js` `req.on('close')`), so navigating away mid-download abandons it — the placeholder must be user-removable (the ticket forbids auto-cleanup). Because these rows aren't on the server yet, `sync()` preserves local `downloading`/`failed` rows whose `downloadId` isn't in the server's id set (mirroring `preservedMoved`), and Dismiss uses `dropLocal()` — a local-only removal with **no** server `DELETE` and no move to the expired list (unlike `removeDownload`).
+**Pending/failed rows (client-only lifecycle):** downloads run server-side and finish even if the user leaves the download page, so history rows are written **at click time**, not on SSE completion. `handleDownload` (`InfoPage.jsx`) calls `startPending()` to write a `status: 'downloading'` row to `tubekeepHistory` immediately (fields: `downloadId`, `url`, `type`, `title`, `thumbnail`, `createdAt` — no `filename`/`size` yet). On SSE `complete`, `addDownload(data.data)` replaces it in place with the full completed record (which carries **no** `status`), so it renders as a normal `ActiveCard`. On SSE `error`, `markFailed()` flips it to `status: 'failed'`. `DownloadsPage` routes `status === 'downloading'` → `DownloadingCard` (spinner, links to `/download/:id`, plus a **Dismiss**) and `status === 'failed'` → `FailedCard` (Redownload + Dismiss) **before** the `ActiveCard` fallback. Because these rows aren't on the server yet, `sync()` preserves local `downloading`/`failed` rows whose `downloadId` isn't in the server's id set (mirroring `preservedMoved`). The two Dismisses differ: a **downloading** row uses `cancelDownload()` — the job runs server-side regardless of the client, so dismissing it must `DELETE /api/download/:id` to actually stop the job (abort + remove partials) **and** drop the row; a **failed** row uses `dropLocal()` — a local-only removal (no server `DELETE`, no move to the expired list) since its file may never have landed.
 
 ### Backend (`backend/src/`)
 - **`server.js`** — Express entry (helmet with CSP disabled for media + cross-origin resource policy, CORS, morgan), route mounting, static SPA serving, cleanup scheduler bootstrap.
-- **`routes/`** — thin HTTP layer: `info.js`, `download.js` (SSE), `files.js` (range serving + expire/delete).
+- **`routes/`** — thin HTTP layer: `info.js`, `download.js` (start job / observer SSE / cancel), `files.js` (range serving + expire/delete).
 - **`services/ytdlp.js`** — all subprocess spawning (see above).
-- **`services/cleanup.js`** — hourly scheduler; also runnable standalone (`npm run cleanup`).
+- **`services/downloadManager.js`** — in-memory job registry that runs downloads to completion decoupled from the client SSE; enforces `MAX_CONCURRENT_DOWNLOADS` (see Download flow).
+- **`services/cleanup.js`** — hourly scheduler; also runnable standalone (`npm run cleanup`). Also prunes finished download-job records (`sweepJobs`).
 - **`utils/storage.js`** — the source of truth for the directory layout, `metadata.json` I/O, and `listDownloads`/`expireDownload`/`deleteDownload`.
 
 ### Frontend (`frontend/src/`)
@@ -93,6 +97,7 @@ Log errors with emoji prefixes for grep-ability (e.g. `❌ Fetch error:`, `⚠�
 PORT=3001
 FRONTEND_URL=http://localhost:5173   # CORS origin; unset = same-origin only
 NODE_ENV=development
+MAX_CONCURRENT_DOWNLOADS=3            # max simultaneous downloads; unset/invalid → 3 (429 over the cap)
 
 # frontend/.env
 VITE_API_URL=http://localhost:3001   # unset → falls back to window.location.origin

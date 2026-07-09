@@ -1,12 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
-const { downloadVideo, downloadAudio, isSupportedUrl } = require('../services/ytdlp');
-const { saveDownloadMetadata } = require('../utils/storage');
+const { isSupportedUrl } = require('../services/ytdlp');
 const { initSSE } = require('../utils/sse');
+const { startJob, getJob, cancelJob, DownloadCapError } = require('../services/downloadManager');
 
-router.post('/', async (req, res) => {
-  const { url, formatId, type } = req.body;
+// Start a download job and return its id. POST both mints the id AND starts the
+// job server-side (via the download manager), so the download runs to completion
+// independent of any client connection. The download parameters ride the request
+// body; the concurrency cap is enforced here, before any SSE is opened.
+router.post('/', (req, res) => {
+  const { url, formatId, type, title, thumbnail, keep } = req.body;
 
   if (!url || !formatId) {
     return res.status(400).json({
@@ -23,6 +27,26 @@ router.post('/', async (req, res) => {
   }
 
   const downloadId = uuidv4();
+  const resolvedType = type || 'video';
+
+  try {
+    startJob({
+      downloadId,
+      url,
+      formatId,
+      type: resolvedType,
+      title,
+      thumbnail,
+      keep: keep === true || keep === 'true',
+    });
+  } catch (error) {
+    if (error instanceof DownloadCapError) {
+      // Over the concurrency cap — a plain HTTP error the UI surfaces inline.
+      return res.status(429).json({ success: false, error: error.message });
+    }
+    console.error('❌ Failed to start download:', error);
+    return res.status(500).json({ success: false, error: 'Failed to start download' });
+  }
 
   res.json({
     success: true,
@@ -30,115 +54,86 @@ router.post('/', async (req, res) => {
       downloadId,
       url,
       formatId,
-      type: type || 'video',
+      type: resolvedType,
       status: 'started',
     },
   });
 });
 
-router.get('/progress/:downloadId', async (req, res) => {
+// Pure observer: attach to an already-running job and stream its progress. This
+// endpoint NEVER spawns a process. Disconnecting only unsubscribes — the job
+// keeps running server-side. An unknown id yields a terminal "download not
+// found" error (e.g. after a server restart) instead of starting a download.
+router.get('/progress/:downloadId', (req, res) => {
   const { downloadId } = req.params;
-  const { url, formatId, type, title, thumbnail, keep } = req.query;
-
-  if (!url || !formatId) {
-    return res.status(400).json({
-      success: false,
-      error: 'URL and formatId are required',
-    });
-  }
-
-  if (!isSupportedUrl(url)) {
-    return res.status(400).json({
-      success: false,
-      error: 'A valid http(s) URL is required',
-    });
-  }
-
   const sendEvent = initSSE(res);
+  const job = getJob(downloadId);
 
-  let result;
-  let progress = 0;
-  let finished = false;
+  if (!job) {
+    sendEvent({ type: 'error', downloadId, error: 'Download not found' });
+    return res.end();
+  }
 
-  // Heartbeat to prevent proxy timeout (every 15 seconds)
+  sendEvent({ type: 'started', downloadId, progress: job.progress });
+
+  // Job already finished before this client connected: replay the terminal
+  // event immediately and close.
+  if (job.status === 'complete') {
+    sendEvent({ type: 'complete', downloadId, progress: 100, data: job.result });
+    return res.end();
+  }
+  if (job.status === 'error') {
+    sendEvent({ type: 'error', downloadId, error: job.error });
+    return res.end();
+  }
+
+  // Running: replay the latest known progress, then stream live updates.
+  sendEvent({ type: 'progress', downloadId, progress: job.progress });
+
+  const onProgress = (progress) => sendEvent({ type: 'progress', downloadId, progress });
+  const onComplete = (data) => {
+    sendEvent({ type: 'complete', downloadId, progress: 100, data });
+    cleanup();
+    res.end();
+  };
+  const onError = (message) => {
+    sendEvent({ type: 'error', downloadId, error: message });
+    cleanup();
+    res.end();
+  };
+
+  // Heartbeat to keep proxies from timing out the idle stream (every 15s).
   const heartbeatInterval = setInterval(() => {
-    sendEvent({ type: 'ping', downloadId, progress });
+    sendEvent({ type: 'ping', downloadId, progress: job.progress });
   }, 15000);
 
-  // If the client navigates away / closes the tab, stop wasting a yt-dlp
-  // subprocess (and the heartbeat) on a dead connection.
-  const abortController = new AbortController();
-  req.on('close', () => {
-    if (finished) return;
-    finished = true;
+  function cleanup() {
     clearInterval(heartbeatInterval);
-    abortController.abort();
-    console.log(`⚠️  Client disconnected — aborting download ${downloadId}`);
-  });
-
-  try {
-    sendEvent({ type: 'started', downloadId, progress: 0 });
-
-    const onProgress = (p) => {
-      progress = Math.min(100, Math.max(0, p));
-      sendEvent({ type: 'progress', downloadId, progress });
-    };
-
-    const { signal } = abortController;
-    if (type === 'audio') {
-      result = await downloadAudio(url, formatId, downloadId, onProgress, signal);
-    } else if (type === 'video') {
-      // Video-only format - will be merged with best audio
-      result = await downloadVideo(url, formatId, downloadId, onProgress, true, signal);
-    } else {
-      // Combined format
-      result = await downloadVideo(url, formatId, downloadId, onProgress, false, signal);
-    }
-
-    const metadata = {
-      url,
-      title: title || result.filename,
-      thumbnail,
-      formatId,
-      type: type || 'video',
-      filename: result.filename,
-      size: result.size,
-      kept: keep === 'true',
-      createdAt: new Date().toISOString(),
-      downloadId,
-    };
-
-    // Client already gone (aborted mid-download): don't persist or emit.
-    if (finished) return;
-    finished = true;
-
-    saveDownloadMetadata(downloadId, metadata);
-
-    sendEvent({
-      type: 'complete',
-      downloadId,
-      progress: 100,
-      data: {
-        ...metadata,
-        fileUrl: `/api/files/${downloadId}/${encodeURIComponent(result.filename)}`,
-      },
-    });
-
-    clearInterval(heartbeatInterval);
-    res.end();
-  } catch (error) {
-    clearInterval(heartbeatInterval);
-    // Swallow errors caused by our own abort-on-disconnect.
-    if (finished) return;
-    finished = true;
-    console.error('❌ Download error:', error);
-    sendEvent({
-      type: 'error',
-      downloadId,
-      error: error.message,
-    });
-    res.end();
+    job.emitter.off('progress', onProgress);
+    job.emitter.off('complete', onComplete);
+    job.emitter.off('error', onError);
   }
+
+  job.emitter.on('progress', onProgress);
+  job.emitter.on('complete', onComplete);
+  job.emitter.on('error', onError);
+
+  // Client navigated away / closed the tab: unsubscribe only. The job is NOT
+  // aborted — it runs to completion server-side.
+  req.on('close', cleanup);
+});
+
+// Explicit cancel: abort a running job and clean up its partial files (the
+// yt-dlp layer removes partials on abort). Wired to the "Dismiss" on a
+// downloading row and the "Cancel" on the download page.
+router.delete('/:downloadId', (req, res) => {
+  const { downloadId } = req.params;
+  const ok = cancelJob(downloadId);
+
+  if (ok) {
+    return res.json({ success: true, message: 'Download cancelled' });
+  }
+  return res.status(404).json({ success: false, error: 'Download not found' });
 });
 
 module.exports = router;

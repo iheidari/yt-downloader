@@ -350,9 +350,10 @@ function MovedCard({ download, onForget }) {
 
 // A download that's still running (placeholder row written at click time). The
 // thumbnail + "Watch progress" both link to /download/:id so the user can watch
-// live progress; a Dismiss drops the row locally (the download is abandoned if
-// the user navigated away — the server aborts it on disconnect). No
-// play/download/move actions, since no file has landed yet.
+// live progress. The download runs server-side regardless of the client, so
+// Dismiss actively cancels the job (aborts it + removes partial files) rather
+// than merely hiding the row. No play/download/move actions, since no file has
+// landed yet.
 function DownloadingCard({ download, onDismiss }) {
   const isAudio = mediaKind(download) === 'audio'
 
@@ -535,6 +536,7 @@ function DownloadsPage() {
     setKept,
     forgetMoved,
     dropLocal,
+    cancelDownload,
   } = useHistory()
   const [filter, setFilter] = useState('all')
 
@@ -595,7 +597,9 @@ function DownloadsPage() {
               return <MovedCard key={item.downloadId} download={item} onForget={forgetMoved} />
             }
             if (item.status === 'downloading') {
-              return <DownloadingCard key={item.downloadId} download={item} onDismiss={dropLocal} />
+              return (
+                <DownloadingCard key={item.downloadId} download={item} onDismiss={cancelDownload} />
+              )
             }
             if (item.status === 'failed') {
               return <FailedCard key={item.downloadId} download={item} onDismiss={dropLocal} />
