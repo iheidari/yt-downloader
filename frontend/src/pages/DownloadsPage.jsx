@@ -349,17 +349,19 @@ function MovedCard({ download, onForget }) {
 }
 
 // A download that's still running (placeholder row written at click time). The
-// whole card links to /download/:id so the user can watch live progress — no
+// thumbnail + "Watch progress" both link to /download/:id so the user can watch
+// live progress; a Dismiss drops the row locally (the download is abandoned if
+// the user navigated away — the server aborts it on disconnect). No
 // play/download/move actions, since no file has landed yet.
-function DownloadingCard({ download }) {
+function DownloadingCard({ download, onDismiss }) {
   const isAudio = mediaKind(download) === 'audio'
 
   return (
-    <Link
-      to={`/download/${download.downloadId}`}
-      className="group bg-surface-container-lowest border border-surface-variant rounded-lg p-4 flex flex-col sm:flex-row gap-4 hover:shadow-md transition-shadow"
-    >
-      <div className="relative w-full sm:w-48 aspect-video flex-shrink-0 overflow-hidden rounded-md bg-surface-container-high">
+    <div className="group bg-surface-container-lowest border border-surface-variant rounded-lg p-4 flex flex-col sm:flex-row gap-4 hover:shadow-md transition-shadow">
+      <Link
+        to={`/download/${download.downloadId}`}
+        className="relative w-full sm:w-48 aspect-video flex-shrink-0 overflow-hidden rounded-md block bg-surface-container-high"
+      >
         {download.thumbnail ? (
           <img
             src={download.thumbnail}
@@ -384,7 +386,7 @@ function DownloadingCard({ download }) {
             progress_activity
           </span>
         </div>
-      </div>
+      </Link>
 
       <div className="flex-grow flex flex-col justify-between min-w-0">
         <div>
@@ -417,14 +419,30 @@ function DownloadingCard({ download }) {
           </div>
         </div>
 
-        <p className="font-label-sm text-label-sm text-primary mt-4 flex items-center gap-1">
-          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
-            open_in_full
-          </span>
-          Tap to watch progress
-        </p>
+        <div className="flex items-center justify-between mt-4">
+          <Link
+            to={`/download/${download.downloadId}`}
+            className="border border-primary text-primary px-6 py-2 rounded-md font-label-md text-label-md flex items-center gap-2 hover:bg-primary/5 transition-all active:scale-95"
+          >
+            <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+              open_in_full
+            </span>
+            Watch progress
+          </Link>
+          <button
+            type="button"
+            onClick={() => onDismiss(download.downloadId)}
+            className="p-2 text-on-surface-variant hover:text-error hover:bg-error-container/20 transition-all rounded-full"
+            title="Dismiss"
+            aria-label="Dismiss download"
+          >
+            <span className="material-symbols-outlined" aria-hidden="true">
+              delete
+            </span>
+          </button>
+        </div>
       </div>
-    </Link>
+    </div>
   )
 }
 
@@ -577,7 +595,7 @@ function DownloadsPage() {
               return <MovedCard key={item.downloadId} download={item} onForget={forgetMoved} />
             }
             if (item.status === 'downloading') {
-              return <DownloadingCard key={item.downloadId} download={item} />
+              return <DownloadingCard key={item.downloadId} download={item} onDismiss={dropLocal} />
             }
             if (item.status === 'failed') {
               return <FailedCard key={item.downloadId} download={item} onDismiss={dropLocal} />
