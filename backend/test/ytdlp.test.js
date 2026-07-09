@@ -1,14 +1,20 @@
-const { test } = require('node:test');
+const { test, after } = require('node:test');
 const assert = require('node:assert');
 const os = require('node:os');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { runYtDlp } = require('./ytdlp');
+const { runYtDlp } = require('../src/services/ytdlp');
+
+const tmpDirs = [];
+after(() => {
+  for (const dir of tmpDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 // Write a throwaway executable that mimics a yt-dlp invocation and return its path.
 function fakeBin(script) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ytdlp-fake-'));
+  tmpDirs.push(dir);
   const file = path.join(dir, 'fake-yt-dlp.sh');
   fs.writeFileSync(file, `#!/bin/sh\n${script}\n`, { mode: 0o755 });
   return file;
