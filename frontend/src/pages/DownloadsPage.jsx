@@ -348,9 +348,194 @@ function MovedCard({ download, onForget }) {
   )
 }
 
+// A download that's still running (placeholder row written at click time). The
+// thumbnail + "Watch progress" both link to /download/:id so the user can watch
+// live progress; a Dismiss drops the row locally (the download is abandoned if
+// the user navigated away — the server aborts it on disconnect). No
+// play/download/move actions, since no file has landed yet.
+function DownloadingCard({ download, onDismiss }) {
+  const isAudio = mediaKind(download) === 'audio'
+
+  return (
+    <div className="group bg-surface-container-lowest border border-surface-variant rounded-lg p-4 flex flex-col sm:flex-row gap-4 hover:shadow-md transition-shadow">
+      <Link
+        to={`/download/${download.downloadId}`}
+        className="relative w-full sm:w-48 aspect-video flex-shrink-0 overflow-hidden rounded-md block bg-surface-container-high"
+      >
+        {download.thumbnail ? (
+          <img
+            src={download.thumbnail}
+            alt={download.title}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <span
+              className="material-symbols-outlined text-on-surface-variant text-[40px]"
+              aria-hidden="true"
+            >
+              {isAudio ? 'music_note' : 'movie'}
+            </span>
+          </div>
+        )}
+        <div className="absolute inset-0 bg-background/40 flex items-center justify-center">
+          <span
+            className="material-symbols-outlined animate-spin text-white text-[40px]"
+            aria-hidden="true"
+          >
+            progress_activity
+          </span>
+        </div>
+      </Link>
+
+      <div className="flex-grow flex flex-col justify-between min-w-0">
+        <div>
+          <div className="flex justify-between items-start gap-2">
+            <h3 className="font-headline-md text-headline-md text-on-surface truncate pr-4">
+              {download.title}
+            </h3>
+            <span className="flex items-center gap-1 text-on-primary-container font-label-sm text-label-sm whitespace-nowrap bg-primary-container px-2 py-0.5 rounded-full">
+              <span
+                className="material-symbols-outlined animate-spin text-[14px]"
+                aria-hidden="true"
+              >
+                progress_activity
+              </span>
+              Downloading…
+            </span>
+          </div>
+          {download.url && (
+            <p className="font-label-sm text-label-sm text-on-surface-variant mt-1 truncate">
+              {download.url}
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-3 mt-3">
+            <span className="bg-surface-variant text-on-surface-variant px-2 py-0.5 rounded font-label-sm text-label-sm">
+              {isAudio ? 'Audio' : 'Video'}
+            </span>
+            <span className="text-on-surface-variant/60 font-label-sm text-label-sm">
+              Started {formatRelative(download.createdAt)}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between mt-4">
+          <Link
+            to={`/download/${download.downloadId}`}
+            className="border border-primary text-primary px-6 py-2 rounded-md font-label-md text-label-md flex items-center gap-2 hover:bg-primary/5 transition-all active:scale-95"
+          >
+            <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+              open_in_full
+            </span>
+            Watch progress
+          </Link>
+          <button
+            type="button"
+            onClick={() => onDismiss(download.downloadId)}
+            className="p-2 text-on-surface-variant hover:text-error hover:bg-error-container/20 transition-all rounded-full"
+            title="Dismiss"
+            aria-label="Dismiss download"
+          >
+            <span className="material-symbols-outlined" aria-hidden="true">
+              delete
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// A download whose SSE errored. Keeps the row visible with a Redownload link and
+// a local-only Dismiss (no server call — the file may never have landed).
+function FailedCard({ download, onDismiss }) {
+  const isAudio = mediaKind(download) === 'audio'
+
+  return (
+    <div className="group bg-surface-container-low/50 border border-error/40 rounded-lg p-4 flex flex-col sm:flex-row gap-4">
+      <div className="relative w-full sm:w-48 aspect-video flex-shrink-0 overflow-hidden rounded-md grayscale bg-surface-container-high">
+        {download.thumbnail ? (
+          <img
+            src={download.thumbnail}
+            alt={download.title}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <span
+              className="material-symbols-outlined text-on-surface-variant/50 text-[40px]"
+              aria-hidden="true"
+            >
+              {isAudio ? 'music_note' : 'movie'}
+            </span>
+          </div>
+        )}
+        <div className="absolute inset-0 bg-background/40 flex items-center justify-center">
+          <span className="material-symbols-outlined text-error text-[40px]" aria-hidden="true">
+            error
+          </span>
+        </div>
+      </div>
+
+      <div className="flex-grow flex flex-col justify-between min-w-0">
+        <div>
+          <div className="flex justify-between items-start gap-2">
+            <h3 className="font-headline-md text-headline-md text-on-surface/60 truncate pr-4">
+              {download.title}
+            </h3>
+            <span className="flex items-center gap-1 text-on-error-container font-label-sm text-label-sm whitespace-nowrap bg-error-container px-2 py-0.5 rounded-full">
+              <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+                error_outline
+              </span>
+              Failed
+            </span>
+          </div>
+          {download.url && (
+            <p className="font-label-sm text-label-sm text-on-surface-variant/60 mt-1 truncate">
+              {download.url}
+            </p>
+          )}
+          <p className="font-label-sm text-label-sm text-on-surface-variant/70 mt-2">
+            This download didn't finish. Try again, or dismiss it.
+          </p>
+        </div>
+
+        <div className="flex items-center justify-between mt-4">
+          {download.url ? (
+            <RedownloadLink url={download.url} />
+          ) : (
+            <span className="text-on-surface-variant/40 font-label-sm text-label-sm">
+              No source URL
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => onDismiss(download.downloadId)}
+            className="p-2 text-on-surface-variant hover:text-error hover:bg-error-container/20 transition-all rounded-full"
+            title="Dismiss"
+            aria-label="Dismiss failed download"
+          >
+            <span className="material-symbols-outlined" aria-hidden="true">
+              delete
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function DownloadsPage() {
-  const { history, expired, apiUrl, removeDownload, forgetExpired, setKept, forgetMoved } =
-    useHistory()
+  const {
+    history,
+    expired,
+    apiUrl,
+    removeDownload,
+    forgetExpired,
+    setKept,
+    forgetMoved,
+    dropLocal,
+  } = useHistory()
   const [filter, setFilter] = useState('all')
 
   const items = useMemo(() => {
@@ -408,6 +593,12 @@ function DownloadsPage() {
           {items.map((item) => {
             if (item.moved) {
               return <MovedCard key={item.downloadId} download={item} onForget={forgetMoved} />
+            }
+            if (item.status === 'downloading') {
+              return <DownloadingCard key={item.downloadId} download={item} onDismiss={dropLocal} />
+            }
+            if (item.status === 'failed') {
+              return <FailedCard key={item.downloadId} download={item} onDismiss={dropLocal} />
             }
             return item._expired ? (
               <ExpiredCard key={item.downloadId} download={item} onForget={forgetExpired} />

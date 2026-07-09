@@ -11,7 +11,7 @@ function DownloadPage() {
   const { downloadId } = useParams()
   const location = useLocation()
   const navigate = useNavigate()
-  const { apiUrl, addDownload } = useHistory()
+  const { apiUrl, addDownload, markFailed } = useHistory()
 
   // Start params normally arrive via router state, but a reload of /download/:id
   // wipes that — recover them from sessionStorage (per-tab, written at start)
@@ -74,6 +74,16 @@ function DownloadPage() {
             navigate(`/play/${downloadId}`, { replace: true })
           } else if (data.type === 'error') {
             setError(data.error || 'Download failed')
+            // Flip the pending Downloads-list row to "Failed" so it stops
+            // spinning and offers Redownload/Dismiss instead. Pass only the
+            // row fields (not the whole startParams) so the fallback-insert
+            // path produces the same row shape startPending writes.
+            markFailed(downloadId, {
+              url: startParams.url,
+              type: startParams.type,
+              title: startParams.title,
+              thumbnail: startParams.thumbnail,
+            })
             clearStartParams(downloadId)
             eventSource.close()
           }
@@ -116,7 +126,7 @@ function DownloadPage() {
       if (pollTimer) clearTimeout(pollTimer)
       if (eventSource) eventSource.close()
     }
-  }, [apiUrl, downloadId, startParams, addDownload, navigate])
+  }, [apiUrl, downloadId, startParams, addDownload, markFailed, navigate])
 
   if (error) {
     return (
