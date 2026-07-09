@@ -43,8 +43,10 @@ function isSupportedUrl(value) {
 
 function runYtDlp(args, options = {}) {
   return new Promise((resolve, reject) => {
-    const ytDlp = spawn(ytDlpBin, args, {
-      timeout: options.timeout || 120000,
+    const ytDlp = spawn(options.binary || ytDlpBin, args, {
+      // `?? ` (not `||`) so callers can pass `timeout: 0` to disable the cap —
+      // downloads can legitimately run far longer than the 2-minute metadata cap.
+      timeout: options.timeout ?? 120000,
       env: ytDlpEnv,
       signal: options.signal,
       ...options.spawnOptions,
@@ -69,11 +71,17 @@ function runYtDlp(args, options = {}) {
       stderr += data.toString();
     });
 
-    ytDlp.on('close', (code) => {
-      if (code !== 0 && code !== null) {
-        reject(new Error(`yt-dlp exited with code ${code}: ${stderr || stdout}`));
-      } else {
+    ytDlp.on('close', (code, signal) => {
+      if (code === 0) {
         resolve({ stdout, stderr });
+      } else if (signal) {
+        // Killed by a signal — the spawn timeout, a client-disconnect abort, or
+        // the OS. A half-written download is NOT a success: reject so the caller
+        // surfaces a real error instead of hunting for a file that was never
+        // finished ("Downloaded file not found").
+        reject(new Error(`yt-dlp was terminated by ${signal}: ${stderr || stdout}`));
+      } else {
+        reject(new Error(`yt-dlp exited with code ${code}: ${stderr || stdout}`));
       }
     });
 
@@ -230,6 +238,10 @@ async function runDownloadWithRetry(args, onProgress, label, signal) {
     try {
       await runYtDlp(args, {
         signal,
+        // No wall-clock cap: a large HLS download (thousands of fragments) can
+        // easily run past the 2-minute metadata default. Liveness is governed by
+        // the SSE heartbeat and client-disconnect abort, not a fixed timeout.
+        timeout: 0,
         onProgress: (line) => {
           const match = line.match(/(\d+\.?\d*)%/);
           if (match && onProgress) {
@@ -346,4 +358,5 @@ module.exports = {
   downloadVideo,
   downloadAudio,
   isSupportedUrl,
+  runYtDlp,
 };
