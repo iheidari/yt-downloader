@@ -144,12 +144,20 @@ export function HistoryProvider({ children }) {
   // Flip a pending row to "failed" when the SSE errors. Updates in place if the
   // placeholder is present (the common path); otherwise inserts a failed row
   // from whatever start fields the caller has, so the failure is never silent.
+  // The insert carries createdAt so it sorts alongside the other rows (the
+  // in-place path already has one from startPending).
   const markFailed = useCallback((downloadId, fallback = {}) => {
     setHistory((prev) => {
       if (prev.some((d) => d.downloadId === downloadId)) {
         return prev.map((d) => (d.downloadId === downloadId ? { ...d, status: 'failed' } : d))
       }
-      return [{ ...fallback, downloadId, status: 'failed' }, ...prev]
+      const entry = {
+        ...fallback,
+        downloadId,
+        createdAt: new Date().toISOString(),
+        status: 'failed',
+      }
+      return [entry, ...prev]
     })
   }, [])
 
