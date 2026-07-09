@@ -34,12 +34,14 @@ No test framework is configured. Linting/formatting is [Biome](https://biomejs.d
 
 ### Download flow
 1. `GET /api/info?url=...` → `services/ytdlp.js` runs `yt-dlp --dump-json`, returns formats grouped into `{ video, audio, combined }`.
-2. `POST /api/download` → mints a `downloadId` (a UUID) **and starts the download job** server-side via the download manager. The parameters ride the **request body** (`url`, `formatId`, `type`, `title`, `thumbnail`, `keep`). The job runs yt-dlp to completion **independent of any client connection** — navigating away no longer aborts it. Over the concurrency cap it returns **HTTP 429** `{ success: false, error }` (the UI surfaces this inline) before any process starts.
+2. `POST /api/download` → mints a `downloadId` (a UUID) **and starts the download job** server-side via the download manager. The parameters ride the **request body** (`url`, `formatId`, `type`, `title`, `thumbnail`, `keep`, `filesize`). The job runs yt-dlp to completion **independent of any client connection** — navigating away no longer aborts it. Two guards run here, before any job starts: over the concurrency cap it returns **HTTP 429**, and if the client-passed `filesize` fails the disk fit margin (`hasRoomFor` in `utils/storage.js`) it returns **HTTP 507** — both `{ success: false, error }` the UI surfaces inline.
 3. `GET /api/download/progress/:downloadId` → **pure observer SSE.** It looks the job up in the registry, replays current progress, and streams `progress` / `complete` / `error` events plus `ping` heartbeats every 15s (for proxy keep-alive). It **does not spawn a process**; disconnecting only unsubscribes (the job keeps running). Reconnecting (reload / new tab / cold visit) **attaches** to the in-flight job — no second process, no query params needed. An unknown id (e.g. after a server restart) yields a terminal `"download not found"` error.
 4. `DELETE /api/download/:downloadId` → **explicit cancel.** Aborts the running job (via its `AbortController`) and removes its partial files. Wired to the `DownloadingCard` **Dismiss** and the download page **Cancel**.
 5. `GET /api/files/:downloadId/:filename` → serves the file with HTTP range support (in-browser seeking/streaming) and RFC 5987 `Content-Disposition` for unicode filenames. `?action=download` forces an attachment.
 
 **Download manager (`services/downloadManager.js`)** — an in-memory `Map<downloadId, job>` registry. Each job holds `{ status: 'running'|'complete'|'error', progress, result, error, params, emitter, abortController }`. Observers attach through `subscribe(downloadId, { onProgress, onComplete, onError })`, which atomically replays the job's current/terminal state and then streams live events (returning an unsubscribe fn, or `null` for an unknown id) — the `emitter` stays internal so the observer route is a thin SSE serializer. On completion the job writes `metadata.json` (moved out of the route) so `/api/files`, the mount-time `sync()`, and the `DownloadPage` reconcile path all resolve the finished file. **In-memory only** — an in-flight download dies on server restart (a reconnect then gets "download not found"); terminal jobs are retained ~30 min for late reconnects, then pruned by the hourly cleanup sweep (`sweepJobs`). The concurrency cap is `MAX_CONCURRENT_DOWNLOADS` (default **3**) simultaneously-running jobs.
+
+**Disk-space guard (`GET /api/disk`, `routes/disk.js`):** returns `{ total, free, used }` (bytes, via `fs.promises.statfs(downloadsDir)`) plus the fit knobs `{ sizeMultiplier, headroomBytes }`. The format screen (`FormatSelector`) shows a storage banner and disables any format whose `filesize` fails the margin. The fit math lives once in `utils/storage.js` — `hasRoomFor(free, filesize)` with `free >= filesize * DISK_SIZE_MULTIPLIER (2×) + DISK_HEADROOM_BYTES (500 MB)` — and the frontend reads the same knobs from the `/api/disk` response (`hasRoomFor` in `lib/media.js`) so client disable-check and server backstop can't drift. The `2×` covers the transient video+audio merge; unknown-size formats are never blocked. The client-passed `filesize` is untrusted (a UX guard, not a security boundary).
 
 ### yt-dlp integration (`services/ytdlp.js`) — read before touching downloads
 This file carries deliberate workarounds for YouTube's 2026-era extraction breakage. Do not "simplify" them away:
@@ -61,11 +63,11 @@ The hourly cleanup scheduler (`services/cleanup.js`, `MAX_FILE_AGE_HOURS = 24`) 
 
 ### Backend (`backend/src/`)
 - **`server.js`** — Express entry (helmet with CSP disabled for media + cross-origin resource policy, CORS, morgan), route mounting, static SPA serving, cleanup scheduler bootstrap.
-- **`routes/`** — thin HTTP layer: `info.js`, `download.js` (start job / observer SSE / cancel), `files.js` (range serving + expire/delete).
+- **`routes/`** — thin HTTP layer: `info.js`, `download.js` (start job / observer SSE / cancel), `files.js` (range serving + expire/delete), `disk.js` (`GET /api/disk` — server disk usage + fit knobs).
 - **`services/ytdlp.js`** — all subprocess spawning (see above).
 - **`services/downloadManager.js`** — in-memory job registry that runs downloads to completion decoupled from the client SSE; enforces `MAX_CONCURRENT_DOWNLOADS` (see Download flow).
 - **`services/cleanup.js`** — hourly scheduler; also runnable standalone (`npm run cleanup`). Also prunes finished download-job records (`sweepJobs`).
-- **`utils/storage.js`** — the source of truth for the directory layout, `metadata.json` I/O, and `listDownloads`/`expireDownload`/`deleteDownload`.
+- **`utils/storage.js`** — the source of truth for the directory layout, `metadata.json` I/O, `listDownloads`/`expireDownload`/`deleteDownload`, and the disk-space guard (`getDiskUsage`/`hasRoomFor` + the fit constants).
 
 ### Frontend (`frontend/src/`)
 Routing-based, **not** a single mega-component (the old `App.jsx`-holds-all-state model is gone):

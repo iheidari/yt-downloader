@@ -98,6 +98,9 @@ function DownloadPage() {
         } catch {
           // fall through
         }
+        // Deliberately do NOT markFailed here (unlike the `error`-event branch):
+        // a transport blip doesn't mean the server-side job died — it keeps
+        // running, and a reload/return re-attaches. Just show a soft notice.
         if (!cancelled) setError((prev) => prev || 'Download connection lost')
       }
     }, 0)

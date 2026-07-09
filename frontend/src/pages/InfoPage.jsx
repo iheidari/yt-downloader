@@ -3,7 +3,7 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import BackLink from '../components/BackLink'
 import FormatSelector from '../components/FormatSelector'
 import { useHistory } from '../context/useHistory'
-import { saveStartParams } from '../lib/media'
+import { fetchDisk, saveStartParams } from '../lib/media'
 
 function InfoPage() {
   const [searchParams] = useSearchParams()
@@ -20,6 +20,20 @@ function InfoPage() {
   // the whole page for a failed info fetch.
   const [startError, setStartError] = useState(null)
   const [startingFormat, setStartingFormat] = useState(null)
+  const [disk, setDisk] = useState(null)
+
+  // Server disk usage powers the banner + the oversized-format disable check.
+  // Fetched independently of the slow yt-dlp info call so the format list isn't
+  // held up; a null result just hides the banner and blocks nothing.
+  useEffect(() => {
+    let cancelled = false
+    fetchDisk(apiUrl).then((d) => {
+      if (!cancelled) setDisk(d)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [apiUrl])
 
   useEffect(() => {
     if (!url) return
@@ -50,14 +64,15 @@ function InfoPage() {
 
   if (!url) return <Navigate to="/" replace />
 
-  const handleDownload = async (formatId, type, keep) => {
+  const handleDownload = async (formatId, type, keep, filesize) => {
     setStartingFormat(formatId)
     setError(null)
     setStartError(null)
     try {
       // POST now starts the job server-side, so it carries every parameter the
       // backend needs to run + persist the download (the SSE is a pure observer
-      // and no longer receives them on its query string).
+      // and no longer receives them on its query string). `filesize` lets the
+      // backend backstop the disk-space check before starting the job.
       const response = await fetch(`${apiUrl}/api/download`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -68,6 +83,7 @@ function InfoPage() {
           title: info.title,
           thumbnail: info.thumbnail,
           keep,
+          filesize,
         }),
       })
       const data = await response.json()
@@ -168,7 +184,12 @@ function InfoPage() {
           </div>
         </div>
       )}
-      <FormatSelector info={info} onDownload={handleDownload} startingFormat={startingFormat} />
+      <FormatSelector
+        info={info}
+        onDownload={handleDownload}
+        startingFormat={startingFormat}
+        disk={disk}
+      />
     </>
   )
 }

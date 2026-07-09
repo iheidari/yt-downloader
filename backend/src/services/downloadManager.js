@@ -39,10 +39,6 @@ function runningCount() {
   return n;
 }
 
-function getJob(downloadId) {
-  return jobs.get(downloadId) || null;
-}
-
 // Attach an observer to a job. Synchronously replays the job's current state
 // (its terminal outcome, or the latest progress) to the matching callback, then
 // — only while it's still running — subscribes to future events. Returns an
@@ -204,11 +200,8 @@ function sweepJobs(now = Date.now()) {
 
 module.exports = {
   startJob,
-  getJob,
   subscribe,
   cancelJob,
   sweepJobs,
-  runningCount,
-  maxConcurrent,
   DownloadCapError,
 };

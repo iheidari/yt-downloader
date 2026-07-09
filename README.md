@@ -12,6 +12,7 @@ tubekeep/
 │   │   ├── routes/        # API endpoints
 │   │   │   ├── info.js         # Video info endpoint
 │   │   │   ├── download.js     # Download endpoint
+│   │   │   ├── disk.js         # Server disk-usage endpoint
 │   │   │   └── files.js        # File serving endpoints
 │   │   ├── services/      # Business logic
 │   │   │   ├── ytdlp.js        # yt-dlp wrapper
@@ -191,12 +192,15 @@ Content-Type: application/json
   "type": "combined",
   "title": "Video Title",
   "thumbnail": "https://...",
-  "keep": false
+  "keep": false,
+  "filesize": 12345678
 }
 ```
 Mints a `downloadId` **and starts the download server-side** — it runs to
 completion regardless of any client connection. Over the concurrency cap
-(`MAX_CONCURRENT_DOWNLOADS`, default 3) it returns **HTTP 429**.
+(`MAX_CONCURRENT_DOWNLOADS`, default 3) it returns **HTTP 429**; if the optional
+`filesize` (the selected format's bytes) fails the disk-space margin it returns
+**HTTP 507** — both before any download starts.
 
 ### Download Progress (SSE)
 ```
@@ -212,6 +216,14 @@ An unknown id yields a `"download not found"` error.
 DELETE /api/download/:downloadId
 ```
 Aborts a running download job and removes its partial files.
+
+### Server Disk Usage
+```
+GET /api/disk
+```
+Returns `{ total, free, used }` (bytes) for the filesystem holding the downloads
+directory, plus the fit knobs (`sizeMultiplier`, `headroomBytes`) the format
+screen uses to disable formats that wouldn't fit.
 
 ### List Downloads
 ```
