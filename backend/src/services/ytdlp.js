@@ -402,5 +402,4 @@ module.exports = {
   downloadAudio,
   isSupportedUrl,
   runYtDlp,
-  friendlyYtDlpError,
 };

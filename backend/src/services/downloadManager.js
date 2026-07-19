@@ -1,6 +1,7 @@
 const { EventEmitter } = require('node:events');
-const { downloadVideo, downloadAudio, friendlyYtDlpError } = require('./ytdlp');
+const { downloadVideo, downloadAudio } = require('./ytdlp');
 const { saveDownloadMetadata } = require('../utils/storage');
+const { friendlyYtDlpError } = require('../utils/friendlyError');
 
 // In-memory registry of download jobs, keyed by downloadId. A job runs yt-dlp to
 // completion INDEPENDENT of any client SSE connection, so navigating away from
