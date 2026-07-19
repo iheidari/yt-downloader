@@ -35,7 +35,8 @@ function createAuthRouter({ store, mailer }) {
 
   // Step 1: request a magic link. Always responds the same way whether or not
   // the email is in the allowlist, so the response can't be used to enumerate
-  // users. Rate limiting is applied where this router is mounted (server.js).
+  // users. Rate-limited inline (per-IP) since it can both send mail and probe
+  // the users table.
   router.post('/request', rateLimit({ windowMs: 60_000, max: 10 }), async (req, res) => {
     const { email } = req.body || {};
     if (!email || typeof email !== 'string') {

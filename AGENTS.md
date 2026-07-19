@@ -216,8 +216,15 @@ Linting and formatting are configured in the root `biome.json`:
 Backend (`.env`):
 ```
 PORT=3001
-FRONTEND_URL=http://localhost:5173
+FRONTEND_URL=http://localhost:5173   # CORS origin (pinned; credentials enabled)
 NODE_ENV=development
+
+# Auth + database (magic-link login) — see backend/.env.example
+DATABASE_URL=postgres://user:pass@host/db?sslmode=require
+JWT_SECRET=                          # session-cookie JWT secret
+APP_URL=http://localhost:3001        # magic-link base + post-login redirect
+RESEND_API_KEY=                      # unset in dev → link logged to console
+EMAIL_FROM=Tubekeep <login@yourdomain>
 ```
 
 Frontend (`.env`):
@@ -234,6 +241,6 @@ This repo has agent skills installed in `.agents/skills/`:
 
 - Downloads are stored in `backend/downloads/` and auto-deleted after 24 hours
 - Uses Server-Sent Events (SSE) for real-time download progress
-- CORS configured for localhost development only
-- No authentication (single-user tool)
+- CORS is pinned to `FRONTEND_URL` with credentials enabled (never a wildcard)
+- Auth is an emailed single-use magic link → JWT httpOnly cookie session; users are a closed, hand-managed set in the Neon `users` table (no signup). All API routes require a session except the public `GET /api/files/:id/:filename` media route
 - Always run both frontend and backend together
