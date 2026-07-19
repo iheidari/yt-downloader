@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from 'react'
 import { usePlayer } from '../context/usePlayer'
+import PlaybackSpeed from './PlaybackSpeed'
 
 // Full-size host for the shared media element on the play page. It doesn't render
 // the <video> itself — it adopts the persistent one from PlayerProvider, so leaving
@@ -49,6 +50,13 @@ function PlayerStage() {
 
       {/* The persistent <video> element is appended here by PlayerProvider. */}
       <div ref={slotRef} className="absolute inset-0" />
+
+      {/* Speed picker sits above the element, clear of the bottom control bar. */}
+      {current && !loadError && (
+        <div className="absolute top-2 right-2 z-10">
+          <PlaybackSpeed />
+        </div>
+      )}
     </div>
   )
 }
