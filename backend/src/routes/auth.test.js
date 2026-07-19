@@ -99,6 +99,38 @@ test('POST /api/auth/request for an unknown email still returns a generic 200', 
   assert.equal(mailer.sent.length, before, 'no email should be sent for an unknown address');
 });
 
+test('POST /api/auth/request with a missing email returns 400 and sends nothing', async () => {
+  const before = mailer.sent.length;
+  const res = await fetch(`${base}/api/auth/request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).success, false);
+  assert.equal(mailer.sent.length, before);
+});
+
+test('POST /api/auth/request with an empty email returns 400', async () => {
+  const res = await fetch(`${base}/api/auth/request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: '' }),
+  });
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).success, false);
+});
+
+test('POST /api/auth/request with a non-string email returns 400', async () => {
+  const res = await fetch(`${base}/api/auth/request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 12345 }),
+  });
+  assert.equal(res.status, 400);
+  assert.equal((await res.json()).success, false);
+});
+
 test('GET /api/auth/verify with a bad token redirects to the error state, no cookie', async () => {
   const res = await fetch(`${base}/api/auth/verify?token=garbage`, { redirect: 'manual' });
   assert.equal(res.status, 302);
