@@ -61,6 +61,18 @@ test('requestMagicLink normalizes email case/whitespace', async () => {
   assert.equal(mailer.sent[0].email, 'alice@example.com');
 });
 
+test('requestMagicLink matches a user whose stored email is mixed-case', async () => {
+  // Regression: findUserByEmail must be case-insensitive, or a hand-entered
+  // mixed-case `users` row could never log in (silent generic 200).
+  const mixed = { id: 'user-2', email: 'Bob@Example.com', name: 'Bob', max_storage_bytes: 100 };
+  const store = createMemoryStore({ users: [mixed] });
+  const mailer = fakeMailer();
+
+  await requestMagicLink('bob@example.com', { store, mailer });
+
+  assert.equal(mailer.sent.length, 1);
+});
+
 test('verifyMagicLink returns the user for a valid token', async () => {
   const store = createMemoryStore({ users: [USER] });
   const mailer = fakeMailer();

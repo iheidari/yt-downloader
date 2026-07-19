@@ -83,6 +83,7 @@ Only emails present in a **manually-managed** Neon `users` table can log in — 
 - **`services/authStore.js`** — data access behind a small interface. `createStore(query)` is the Postgres-backed impl; `createMemoryStore()` implements the same four methods in memory for tests. Routes/middleware take a store so nothing touches Postgres in unit tests.
 - **`routes/auth.js`** — `createAuthRouter({ store, mailer })`. `POST /api/auth/request` (rate-limited; **generic response regardless of allowlist**), `GET /api/auth/verify?token=…` (consume token → set cookie → redirect to `APP_URL/?login=success|error`), `POST /api/auth/logout` (clear cookie), `GET /api/auth/me` (session user or 401). Cookie flags: httpOnly + SameSite=Lax always, Secure only in prod.
 - **`middleware/requireAuth.js`** — `createRequireAuth(store)` verifies the session cookie JWT, loads the user, and attaches `req.user` (incl. `user_id` for 0XC-100); 401 otherwise. Mounted on **every** API router (`/api/info`, `/api/download`, `/api/disk`, `/api/cloud`, and `/api/files`'s list/PATCH/DELETE) **except** the public `GET /api/files/:downloadId/:filename` serve route, so shared `/play/:id` links keep working for logged-out visitors. CORS runs with `credentials: true` against the **pinned** `FRONTEND_URL` (never a wildcard).
+- **Deploy ordering** — because every API route now requires a session, this backend must ship **together with or after** the frontend login UI (0XC-98). Deploying it ahead of 0XC-98 would 401 the existing SPA (which sends no session cookie yet) and lock users out. `db.js` verifies the DB's TLS cert by default (`DATABASE_SSL_NO_VERIFY=true` opts out); the server refuses to boot in production without `JWT_SECRET`.
 
 ### Frontend (`frontend/src/`)
 Routing-based, **not** a single mega-component (the old `App.jsx`-holds-all-state model is gone):
@@ -118,7 +119,8 @@ MAX_CONCURRENT_DOWNLOADS=3            # max simultaneous downloads; unset/invali
 
 # --- Auth + database (magic-link login) -----------------------------------
 DATABASE_URL=postgres://user:pass@host/db?sslmode=require  # Neon connection string
-JWT_SECRET=                          # HMAC secret for the session cookie JWT (generate a long random value)
+# DATABASE_SSL_NO_VERIFY=true        # opt-out: skip TLS cert verification (still encrypted) if the DB's CA isn't trusted
+JWT_SECRET=                          # HMAC secret for the session cookie JWT (generate a long random value). REQUIRED in production — the server refuses to start without it
 APP_URL=http://localhost:3001        # base URL the emailed magic link points at; also the post-login redirect target
 RESEND_API_KEY=                      # Resend API key. UNSET in dev → the magic link is logged to the server console instead of emailed
 EMAIL_FROM=Tubekeep <login@yourdomain>  # verified Resend sender for the magic-link email

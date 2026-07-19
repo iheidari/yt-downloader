@@ -6,11 +6,14 @@
 // Build a store backed by a `query(text, params)` function (see db.js).
 function createStore(query) {
   return {
-    // Look up an allowed user by email (login identity). Returns the row or null.
+    // Look up an allowed user by email (login identity). Case-insensitive, and
+    // the param is lowercased here too, so a hand-entered mixed-case `users` row
+    // still matches (schema stores plain `text`, no citext) — otherwise that
+    // user could never log in, silently.
     async findUserByEmail(email) {
       const { rows } = await query(
-        'SELECT id, email, name, max_storage_bytes FROM users WHERE email = $1',
-        [email],
+        'SELECT id, email, name, max_storage_bytes FROM users WHERE lower(email) = $1',
+        [String(email).toLowerCase()],
       );
       return rows[0] || null;
     },
@@ -56,7 +59,8 @@ function createMemoryStore({ users = [] } = {}) {
 
   return {
     async findUserByEmail(email) {
-      return users.find((u) => u.email === email) || null;
+      const wanted = String(email).toLowerCase();
+      return users.find((u) => u.email.toLowerCase() === wanted) || null;
     },
     async findUserById(id) {
       return users.find((u) => u.id === id) || null;

@@ -8,7 +8,9 @@ const cookieParser = require('cookie-parser');
 // hermetic (no Postgres). JWT_SECRET is set for completeness.
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-do-not-use-in-prod';
 
-const filesRoutes = require('./files');
+const { createFilesRouter } = require('./files');
+const { createRequireAuth } = require('../middleware/requireAuth');
+const { createMemoryStore } = require('../services/authStore');
 
 let server;
 let base;
@@ -17,7 +19,8 @@ before(async () => {
   const app = express();
   app.use(express.json());
   app.use(cookieParser());
-  app.use('/api/files', filesRoutes);
+  const requireAuth = createRequireAuth(createMemoryStore());
+  app.use('/api/files', createFilesRouter(requireAuth));
   await new Promise((resolve) => {
     server = app.listen(0, () => {
       base = `http://127.0.0.1:${server.address().port}`;

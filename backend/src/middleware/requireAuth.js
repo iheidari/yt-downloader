@@ -3,8 +3,8 @@
 // 401 `{ success, error }` when the cookie is missing/invalid or the user no
 // longer exists. Mounted on every API router EXCEPT the public file-serving GET.
 //
-// Exposed as a factory so tests can inject an in-memory store; the default
-// export lazily wires the real Postgres-backed store.
+// A factory over the store, so server.js builds it once from the single shared
+// store and passes it to every router, and tests inject an in-memory store.
 const { verifySession, SESSION_COOKIE } = require('../services/authService');
 
 function createRequireAuth(store) {
@@ -38,16 +38,4 @@ function createRequireAuth(store) {
   };
 }
 
-// Lazily build the real store so requiring this module doesn't touch the DB
-// (and doesn't throw when DATABASE_URL is unset in unit tests).
-let defaultMiddleware;
-function requireAuth(req, res, next) {
-  if (!defaultMiddleware) {
-    const { query } = require('../db');
-    const { createStore } = require('../services/authStore');
-    defaultMiddleware = createRequireAuth(createStore(query));
-  }
-  return defaultMiddleware(req, res, next);
-}
-
-module.exports = { requireAuth, createRequireAuth };
+module.exports = { createRequireAuth };

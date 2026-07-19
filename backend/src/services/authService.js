@@ -42,7 +42,10 @@ function signSession(user) {
 function verifySession(token) {
   if (!token) return null;
   try {
-    return jwt.verify(token, getJwtSecret());
+    // Pin the algorithm: never accept a token signed with anything but our HS256
+    // (defense-in-depth against algorithm-confusion, even though jsonwebtoken@9
+    // already rejects `alg:none`).
+    return jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] });
   } catch {
     return null;
   }
