@@ -8,7 +8,7 @@ import { usePlayer } from './context/usePlayer'
 
 function App() {
   const { current, stageActive } = usePlayer()
-  const { user, logout } = useAuth()
+  const { user, loading, logout } = useAuth()
   const navigate = useNavigate()
   const dockVisible = !!current && !stageActive
   const navLinkClass = ({ isActive }) =>
@@ -37,33 +37,39 @@ function App() {
             </NavLink>
             <span className="w-px h-5 bg-line mx-1.5" aria-hidden="true" />
             <ThemeToggle />
-            <span className="w-px h-5 bg-line mx-1.5" aria-hidden="true" />
-            {user ? (
+            {/* Hold the auth control until /api/auth/me resolves, so an authed
+                user doesn't flash "Log in" on every full page load. */}
+            {!loading && (
               <>
-                <span
-                  className="font-label-md text-[13.5px] text-muted max-w-[14ch] truncate"
-                  title={user.email}
-                >
-                  {user.name || user.email}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="font-label-md text-[13.5px] text-muted hover:text-ink transition-colors px-3 py-2 rounded-lg inline-flex items-center gap-1"
-                >
-                  <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
-                    logout
-                  </span>
-                  Logout
-                </button>
+                <span className="w-px h-5 bg-line mx-1.5" aria-hidden="true" />
+                {user ? (
+                  <>
+                    <span
+                      className="font-label-md text-[13.5px] text-muted max-w-[14ch] truncate"
+                      title={user.email}
+                    >
+                      {user.name || user.email}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="font-label-md text-[13.5px] text-muted hover:text-ink transition-colors px-3 py-2 rounded-lg inline-flex items-center gap-1"
+                    >
+                      <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                        logout
+                      </span>
+                      Logout
+                    </button>
+                  </>
+                ) : (
+                  <Link
+                    to="/login"
+                    className="font-label-md text-[13.5px] text-muted hover:text-ink transition-colors px-3 py-2 rounded-lg"
+                  >
+                    Log in
+                  </Link>
+                )}
               </>
-            ) : (
-              <Link
-                to="/login"
-                className="font-label-md text-[13.5px] text-muted hover:text-ink transition-colors px-3 py-2 rounded-lg"
-              >
-                Log in
-              </Link>
             )}
           </div>
         </div>

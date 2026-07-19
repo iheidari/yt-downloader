@@ -19,8 +19,24 @@ function LoginPage() {
   const [status, setStatus] = useState('idle')
   const [fieldError, setFieldError] = useState('')
 
+  // Wait for /api/auth/me before deciding what to render, so an already-signed-in
+  // visitor doesn't see the sign-in form flash before the redirect.
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-bg" role="status">
+        <span
+          className="material-symbols-outlined animate-spin text-[40px] text-muted"
+          aria-hidden="true"
+        >
+          progress_activity
+        </span>
+        <span className="sr-only">Loading…</span>
+      </div>
+    )
+  }
+
   // Already signed in? Nothing to do here — send them into the app.
-  if (!loading && user) return <Navigate to="/" replace />
+  if (user) return <Navigate to="/" replace />
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -113,6 +129,8 @@ function LoginPage() {
                   onChange={(e) => {
                     setEmail(e.target.value)
                     if (fieldError) setFieldError('')
+                    // Clear a prior send-failure banner once they start retyping.
+                    if (status === 'error') setStatus('idle')
                   }}
                   disabled={status === 'submitting'}
                   aria-invalid={fieldError ? 'true' : undefined}
