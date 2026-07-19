@@ -1,5 +1,5 @@
 const { EventEmitter } = require('node:events');
-const { downloadVideo, downloadAudio } = require('./ytdlp');
+const { downloadVideo, downloadAudio, friendlyYtDlpError } = require('./ytdlp');
 const { saveDownloadMetadata } = require('../utils/storage');
 
 // In-memory registry of download jobs, keyed by downloadId. A job runs yt-dlp to
@@ -124,7 +124,9 @@ async function runJob(job) {
     // any failure — including our cancel-abort — so there's nothing to clean up
     // here beyond recording the terminal state.
     job.status = 'error';
-    job.error = job.cancelled ? 'Download cancelled' : error.message;
+    // Surface friendly copy to the client (SSE `error`) while keeping the full
+    // raw stderr in the server log below for operators (see 0XC-95).
+    job.error = job.cancelled ? 'Download cancelled' : friendlyYtDlpError(error.message);
     job.terminalAt = Date.now();
     if (job.cancelled) {
       console.log(`🛑 Download job cancelled ${downloadId}`);
