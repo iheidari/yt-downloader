@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-// The Dropbox popup lands here after consent. Its only job is to relay the
+// The cloud provider's OAuth popup lands here after consent. Its only job is to relay the
 // authorization code (and state) back to the opener window via postMessage,
 // then close itself. The opener completes the PKCE exchange. Rendered outside
 // the app shell so the popup stays minimal.

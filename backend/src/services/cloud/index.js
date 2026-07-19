@@ -1,12 +1,14 @@
-// Cloud-provider registry. v1 ships Dropbox only; OneDrive/Google Drive slot in
-// here behind the same shape (isEnabled/getPublicConfig/exchangeCode/refresh/
-// upload). Routes and the job manager never import a provider directly — they
-// resolve one through getProvider(name).
+// Cloud-provider registry. OneDrive slots in here behind the same shape
+// (isEnabled/getPublicConfig/exchangeCode/refresh/upload). Routes and the job
+// manager never import a provider directly — they resolve one through
+// getProvider(name).
 
 const dropbox = require('./dropbox');
+const googledrive = require('./googledrive');
 
 const PROVIDERS = {
   dropbox,
+  googledrive,
 };
 
 function getProvider(name) {

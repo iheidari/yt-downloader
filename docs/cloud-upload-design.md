@@ -1,9 +1,10 @@
 # Cloud Upload ("Move to Dropbox") — Design & Next Steps
 
-> Status: **v1 implemented** (Dropbox only). This document is the agreed design from the
-> design interview; OneDrive and Google Drive remain fast-follows. See "Implementation" below
-> for where the code lives. To enable it, set the Dropbox env vars (see
-> [dropbox-setup.md](./dropbox-setup.md)); with them unset the feature is cleanly hidden.
+> Status: **implemented** for **Dropbox and Google Drive**. This document is the agreed design
+> from the design interview; OneDrive remains a fast-follow. See "Implementation" below for where
+> the code lives. To enable a provider, set its env vars (Dropbox →
+> [dropbox-setup.md](./dropbox-setup.md); Google Drive → [googledrive-setup.md](./googledrive-setup.md));
+> with them unset that provider is cleanly hidden from the "Move to cloud" menu.
 
 ## Goal
 
@@ -134,6 +135,10 @@ See **[dropbox-setup.md](./dropbox-setup.md)** for how to obtain these.
     Dropbox's `/oauth2/token`), account lookup, and the chunked upload engine (8 MB single-shot
     threshold, upload sessions above it, per-chunk retry, disk streaming, typed CloudError codes
     `auth`/`quota`/`upload`). Builds the no-scope "Open in Dropbox" deep link.
+  - `services/cloud/googledrive.js` — provider: PKCE/secret token exchange + refresh (direct to
+    Google's `/token`), and the resumable-upload engine (find-or-create the "Tubekeep" folder,
+    8 MB chunked PUTs to a resumable session, per-chunk retry, disk streaming, same typed
+    CloudError codes `auth`/`quota`/`upload`). Uses the `drive.file` scope (app-created files only).
   - `services/cloud/index.js` — provider registry (`getProvider`, `listEnabledProviders`).
   - `services/cloud/jobs.js` — in-memory job manager: concurrency cap (3), queue, per-job
     EventEmitter, hard TTL (30m), token cleared the instant a job settles. On success calls
@@ -142,9 +147,10 @@ See **[dropbox-setup.md](./dropbox-setup.md)** for how to obtain these.
     `POST /upload` (token in body → jobId), `GET /upload/:jobId/progress` (SSE). Mounted at
     `/api/cloud` with per-IP rate limiting.
 - **Frontend**
-  - `lib/dropbox.js` — PKCE (Web Crypto), popup connect, sessionStorage token store,
-    refresh-aware `getFreshAccessToken()`. Config resolved from `/api/cloud/providers` (VITE_
-    vars optional overrides).
+  - `lib/cloud.js` — generic, data-driven by a per-provider table (Dropbox, Google Drive): PKCE
+    (Web Crypto), popup connect, per-provider sessionStorage token store, refresh-aware
+    `getFreshAccessToken(provider)`, `getEnabledProviders()`. Config resolved from
+    `/api/cloud/providers` (VITE_ vars optional overrides).
   - `pages/OAuthCallbackPage.jsx` + `/oauth/callback` route (standalone, outside the app shell).
   - `hooks/useCloudMove.js` + `components/MoveToCloud.jsx` — the button/progress/fallback UI.
   - `context/HistoryContext.jsx` — `markMoved`/`dropLocal`; sync preserves moved rows locally.
