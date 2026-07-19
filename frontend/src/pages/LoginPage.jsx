@@ -122,7 +122,11 @@ function LoginPage() {
               </div>
 
               {fieldError && (
-                <p id="login-email-error" className="mt-1.5 font-body-md text-[13px] text-pop">
+                <p
+                  id="login-email-error"
+                  role="alert"
+                  className="mt-1.5 font-body-md text-[13px] text-pop"
+                >
                   {fieldError}
                 </p>
               )}
@@ -140,7 +144,10 @@ function LoginPage() {
               >
                 {status === 'submitting' ? (
                   <>
-                    <span className="material-symbols-outlined animate-spin text-[20px]">
+                    <span
+                      className="material-symbols-outlined animate-spin text-[20px]"
+                      aria-hidden="true"
+                    >
                       progress_activity
                     </span>
                     Sending…
