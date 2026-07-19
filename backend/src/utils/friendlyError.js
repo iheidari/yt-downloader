@@ -34,9 +34,10 @@ const ERROR_PATTERNS = [
   },
   {
     // Geo-blocked. Keep ahead of the generic "unavailable" — YouTube prefixes the
-    // country message with "Video unavailable" too.
-    pattern:
-      /in your country|not available in your location|blocked it in your country|geo|available in your country/,
+    // country message with "Video unavailable" too. Anchor on the full "…available
+    // in your country/location/region" phrase so a stray "geo" substring in a video
+    // title or path can't misclassify unrelated failures as region-blocked.
+    pattern: /available in your (?:country|location|region)|blocked it in your country/,
     message: "This video isn't available in this region.",
   },
   {
@@ -69,7 +70,11 @@ const ERROR_PATTERNS = [
 // Map a raw yt-dlp/error message to friendly user-facing copy. Never returns
 // internal detail: unrecognized input falls back to the generic message.
 function friendlyYtDlpError(rawMessage) {
-  const text = String(rawMessage || '').toLowerCase();
+  // Normalize the U+2019 curly apostrophe YouTube uses ("you've", "you're",
+  // "channel's") to a straight quote so the apostrophe-bearing patterns match.
+  const text = String(rawMessage || '')
+    .toLowerCase()
+    .replace(/’/g, "'");
   for (const { pattern, message } of ERROR_PATTERNS) {
     if (pattern.test(text)) return message;
   }
