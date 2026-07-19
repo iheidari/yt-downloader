@@ -297,6 +297,7 @@ function MovedCard({ download, onForget }) {
               <span
                 className="material-symbols-outlined text-[14px]"
                 style={{ fontVariationSettings: "'FILL' 1" }}
+                aria-hidden="true"
               >
                 cloud_done
               </span>
@@ -327,7 +328,9 @@ function MovedCard({ download, onForget }) {
                 rel="noopener noreferrer"
                 className="bg-primary text-on-primary px-6 py-2 rounded-md font-label-md text-label-md flex items-center gap-2 hover:opacity-90 active:scale-95 transition-all"
               >
-                <span className="material-symbols-outlined text-[18px]">open_in_new</span>
+                <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                  open_in_new
+                </span>
                 Open in {label}
               </a>
             ) : (

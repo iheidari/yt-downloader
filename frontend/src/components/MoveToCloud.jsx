@@ -26,6 +26,8 @@ function MoveToCloud({ download, downloadHref, onMoved }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [, setTick] = useState(0)
   const rootRef = useRef(null)
+  const triggerRef = useRef(null)
+  const menuRef = useRef(null)
 
   // Flip the button to "expiring soon" exactly when the runway crosses the
   // cutoff, without polling — schedule a single re-render at that moment.
@@ -37,14 +39,26 @@ function MoveToCloud({ download, downloadHref, onMoved }) {
     return () => clearTimeout(timer)
   }, [runway])
 
-  // Close the provider menu on any outside click.
+  // Close the provider menu on outside click or Escape (returning focus to the
+  // trigger), and move focus into the menu when it opens so it's keyboard-usable.
   useEffect(() => {
     if (!menuOpen) return
     const onDocClick = (e) => {
       if (rootRef.current && !rootRef.current.contains(e.target)) setMenuOpen(false)
     }
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setMenuOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
     document.addEventListener('mousedown', onDocClick)
-    return () => document.removeEventListener('mousedown', onDocClick)
+    document.addEventListener('keydown', onKeyDown)
+    menuRef.current?.querySelector('button')?.focus()
+    return () => {
+      document.removeEventListener('mousedown', onDocClick)
+      document.removeEventListener('keydown', onKeyDown)
+    }
   }, [menuOpen])
 
   // Hidden until we know which providers are enabled (avoids a flash then
@@ -61,7 +75,9 @@ function MoveToCloud({ download, downloadHref, onMoved }) {
           title="This file is about to expire — download it to your device instead."
           className="flex items-center justify-center gap-1 text-on-surface-variant/60 font-label-sm text-label-sm whitespace-nowrap border border-outline-variant px-3 py-1 rounded-full cursor-default"
         >
-          <span className="material-symbols-outlined text-[16px]">cloud_off</span>
+          <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
+            cloud_off
+          </span>
           Move to cloud
         </button>
         <span className="font-label-sm text-label-sm text-on-surface-variant/70 text-center">
@@ -77,6 +93,7 @@ function MoveToCloud({ download, downloadHref, onMoved }) {
         <span
           className="material-symbols-outlined text-[16px]"
           style={{ fontVariationSettings: "'FILL' 1" }}
+          aria-hidden="true"
         >
           cloud_done
         </span>
@@ -135,16 +152,17 @@ function MoveToCloud({ download, downloadHref, onMoved }) {
   return (
     <div ref={rootRef} className="relative flex flex-col items-stretch gap-1 min-w-[9rem]">
       <button
+        ref={triggerRef}
         type="button"
         onClick={onButtonClick}
         disabled={busy}
-        aria-haspopup={providers.length > 1 ? 'menu' : undefined}
         aria-expanded={providers.length > 1 ? menuOpen : undefined}
         className="flex items-center justify-center gap-1 text-primary font-label-sm text-label-sm whitespace-nowrap border border-primary px-3 py-1 rounded-full hover:bg-primary/5 transition-colors active:scale-95 disabled:opacity-70 disabled:cursor-default disabled:active:scale-100"
       >
         <span
           className={`material-symbols-outlined text-[16px] ${busy ? 'animate-spin' : ''}`}
           style={busy ? undefined : { fontVariationSettings: "'FILL' 1" }}
+          aria-hidden="true"
         >
           {busy ? 'progress_activity' : 'cloud_upload'}
         </span>
@@ -153,18 +171,22 @@ function MoveToCloud({ download, downloadHref, onMoved }) {
 
       {menuOpen && !busy && (
         <div
-          role="menu"
+          ref={menuRef}
           className="absolute top-full left-0 right-0 mt-1 z-10 bg-surface-container-high border border-outline-variant rounded-lg shadow-lg overflow-hidden"
         >
           {providers.map((p) => (
             <button
               key={p.name}
               type="button"
-              role="menuitem"
               onClick={() => choose(p.name)}
               className="flex items-center gap-2 w-full px-3 py-2 text-on-surface font-label-sm text-label-sm hover:bg-primary/10 transition-colors text-left"
             >
-              <span className="material-symbols-outlined text-[18px] text-primary">{p.icon}</span>
+              <span
+                className="material-symbols-outlined text-[18px] text-primary"
+                aria-hidden="true"
+              >
+                {p.icon}
+              </span>
               {p.label}
             </button>
           ))}
@@ -172,7 +194,14 @@ function MoveToCloud({ download, downloadHref, onMoved }) {
       )}
 
       {phase === 'uploading' && (
-        <div className="h-1 w-full bg-surface-variant rounded-full overflow-hidden">
+        <div
+          role="progressbar"
+          aria-valuenow={Math.round(progress)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label="Upload progress"
+          className="h-1 w-full bg-surface-variant rounded-full overflow-hidden"
+        >
           <div
             className="h-full bg-primary transition-[width] duration-200"
             style={{ width: `${progress}%` }}
