@@ -3,7 +3,7 @@
 > Status: **implemented** for **Dropbox and Google Drive**. This document is the agreed design
 > from the design interview; OneDrive remains a fast-follow. See "Implementation" below for where
 > the code lives. To enable a provider, set its env vars (Dropbox →
-> [dropbox-setup.md](./dropbox-setup.md); Google Drive → [googledrive-setup.md](./googledrive-setup.md));
+> [dropbox-setup.md](./dropbox-setup.md); Google Drive → [google-drive-setup.md](./google-drive-setup.md));
 > with them unset that provider is cleanly hidden from the "Move to cloud" menu.
 
 ## Goal
@@ -135,7 +135,7 @@ VITE_DROPBOX_REDIRECT_URI=...     # exact-match redirect URI
 VITE_GOOGLE_CLIENT_ID=...         # public client id for the popup/PKCE
 VITE_GOOGLE_REDIRECT_URI=...      # exact-match redirect URI
 ```
-See **[dropbox-setup.md](./dropbox-setup.md)** and **[googledrive-setup.md](./googledrive-setup.md)**
+See **[dropbox-setup.md](./dropbox-setup.md)** and **[google-drive-setup.md](./google-drive-setup.md)**
 for how to obtain these.
 
 ---

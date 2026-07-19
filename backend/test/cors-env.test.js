@@ -54,8 +54,12 @@ after(() => {
 });
 
 test('FRONTEND_URL from .env is applied as the CORS origin (dotenv is loaded)', async () => {
-  const res = await fetch(`${base}/api/files`, { headers: { Origin: ORIGIN } });
-  assert.strictEqual(res.status, 200);
+  // Probe `/api/auth/me`: a public, always-present `/api` route that returns a
+  // deterministic 401 with no session (short-circuits before any DB access).
+  // CORS runs ahead of the auth gate, so the Access-Control-Allow-Origin header
+  // — the thing under test — is present regardless of the 401 status.
+  const res = await fetch(`${base}/api/auth/me`, { headers: { Origin: ORIGIN } });
+  assert.strictEqual(res.status, 401);
   assert.strictEqual(
     res.headers.get('access-control-allow-origin'),
     ORIGIN,

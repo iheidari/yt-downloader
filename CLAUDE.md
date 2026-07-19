@@ -72,6 +72,19 @@ The hourly cleanup scheduler (`services/cleanup.js`, `MAX_FILE_AGE_HOURS = 24`) 
 - **`services/downloadManager.js`** — in-memory job registry that runs downloads to completion decoupled from the client SSE; enforces `MAX_CONCURRENT_DOWNLOADS` (see Download flow).
 - **`services/cleanup.js`** — hourly scheduler; also runnable standalone (`npm run cleanup`). Also prunes finished download-job records (`sweepJobs`).
 - **`utils/storage.js`** — the source of truth for the directory layout, `metadata.json` I/O, `listDownloads`/`expireDownload`/`deleteDownload`, and the disk-space guard (`getDiskUsage`/`hasRoomFor` + the fit constants).
+- **`utils/friendlyError.js`** — `friendlyYtDlpError(rawMessage)`: maps raw yt-dlp stderr to short, blame-free user copy via an ordered `{ pattern, message }` list (unavailable/removed, private, members-only, age-restricted, geo-blocked, live/premiere, unsupported URL, network/timeout), falling back to a generic message. Matches lowercased substrings anywhere in multi-line stderr, most-specific first. `getVideoInfo`'s catch and `downloadManager`'s `runJob` error path both run every user-facing error through it, so `/api/info` and SSE `error` never leak exit codes, extractor tags, or enforcement-vendor names. The **full raw stderr is still `console.error`-logged** server-side for operators — only the user-facing string is rewritten.
+
+### Auth + database (magic-link login)
+Only emails present in a **manually-managed** Neon `users` table can log in — there is **no signup and no admin UI**; add/remove a user or change their quota by editing the `users` row in the Neon dashboard. Login is an emailed single-use magic link → a JWT httpOnly cookie session.
+
+- **`db.js`** — lazily-created `pg` connection pool over `DATABASE_URL` (forces TLS). Exposes `query(text, params)` and `getPool()`. Importing it never connects, so tests that inject their own store don't need a database.
+- **`schema.sql`** + **`npm run db:init`** (`src/dbInit.js`) — hand-written schema (no ORM/migrations). Defines `users` (id, email UNIQUE, name, `max_storage_bytes` bigint default 5 GB / `-1` = unlimited), `login_tokens` (stores only the SHA-256 **hash** of each token, single-use + ~15-min expiry), and `downloads` (defined here for 0XC-100 to populate; not yet wired). Idempotent — safe to re-run. Apply once against Neon: `DATABASE_URL=… npm run db:init`.
+- **`services/mailer.js`** — `sendMagicLink(email, rawToken)`. Sends via the **Resend** HTTP API when `RESEND_API_KEY` is set; otherwise (dev/tests) **logs the link to the server console** so the flow is testable without credentials. Builds links from `APP_URL`, sends from `EMAIL_FROM`. Never throws to the caller (a mail outage must not leak whether an address was allowed).
+- **`services/authService.js`** — Express/Postgres-free crypto + orchestration (so it unit-tests in isolation): token `generate`/`hash`, JWT `signSession`/`verifySession` (reads `JWT_SECRET`, 30-day expiry), and `requestMagicLink`/`verifyMagicLink`. Token consumption is a single atomic `UPDATE … WHERE used_at IS NULL AND expires_at > now()` in the store, which is what enforces single-use even under concurrent clicks.
+- **`services/authStore.js`** — data access behind a small interface. `createStore(query)` is the Postgres-backed impl; `createMemoryStore()` implements the same four methods in memory for tests. Routes/middleware take a store so nothing touches Postgres in unit tests.
+- **`routes/auth.js`** — `createAuthRouter({ store, mailer })`. `POST /api/auth/request` (rate-limited; **generic response regardless of allowlist**), `GET /api/auth/verify?token=…` (consume token → set cookie → redirect to `APP_URL/?login=success|error`), `POST /api/auth/logout` (clear cookie), `GET /api/auth/me` (session user or 401). Cookie flags: httpOnly + SameSite=Lax always, Secure only in prod.
+- **`middleware/requireAuth.js`** — `createRequireAuth(store)` verifies the session cookie JWT, loads the user, and attaches `req.user` (incl. `user_id` for 0XC-100); 401 otherwise. Mounted on **every** API router (`/api/info`, `/api/download`, `/api/disk`, `/api/cloud`, and `/api/files`'s list/PATCH/DELETE) **except** the public `GET /api/files/:downloadId/:filename` serve route, so shared `/play/:id` links keep working for logged-out visitors. CORS runs with `credentials: true` against the **pinned** `FRONTEND_URL` (never a wildcard).
+- **Deploy ordering** — because every API route now requires a session, this backend must ship **together with or after** the frontend login UI (0XC-98). Deploying it ahead of 0XC-98 would 401 the existing SPA (which sends no session cookie yet) and lock users out. `db.js` verifies the DB's TLS cert by default (`DATABASE_SSL_NO_VERIFY=true` opts out); the server refuses to boot in production without `JWT_SECRET`.
 
 ### Frontend (`frontend/src/`)
 Routing-based, **not** a single mega-component (the old `App.jsx`-holds-all-state model is gone):
@@ -101,13 +114,23 @@ Log errors with emoji prefixes for grep-ability (e.g. `❌ Fetch error:`, `⚠�
 ```
 # backend/.env
 PORT=3001
-FRONTEND_URL=http://localhost:5173   # CORS origin; unset = same-origin only
+FRONTEND_URL=http://localhost:5173   # CORS origin (pinned; credentials enabled). Unset = same-origin only
 NODE_ENV=development
 MAX_CONCURRENT_DOWNLOADS=3            # max simultaneous downloads; unset/invalid → 3 (429 over the cap)
+
+# --- Auth + database (magic-link login) -----------------------------------
+DATABASE_URL=postgres://user:pass@host/db?sslmode=require  # Neon connection string
+# DATABASE_SSL_NO_VERIFY=true        # opt-out: skip TLS cert verification (still encrypted) if the DB's CA isn't trusted
+JWT_SECRET=                          # HMAC secret for the session cookie JWT (generate a long random value). REQUIRED in production — the server refuses to start without it
+APP_URL=http://localhost:3001        # base URL the emailed magic link points at; also the post-login redirect target
+RESEND_API_KEY=                      # Resend API key. UNSET in dev → the magic link is logged to the server console instead of emailed
+EMAIL_FROM=Tubekeep <login@yourdomain>  # verified Resend sender for the magic-link email
 
 # frontend/.env
 VITE_API_URL=http://localhost:3001   # unset → falls back to window.location.origin
 ```
+
+Secrets (`DATABASE_URL`, `JWT_SECRET`, `RESEND_API_KEY`) live only in `backend/.env` (gitignored) — never commit them.
 
 ## Deployment
 
