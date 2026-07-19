@@ -9,6 +9,7 @@ const {
   expireDownload,
   setKept,
 } = require('../utils/storage');
+const { requireAuth } = require('../middleware/requireAuth');
 
 // RFC 5987 encoding for unicode filenames in Content-Disposition header
 function encodeRFC5987(filename) {
@@ -29,7 +30,10 @@ function getContentDisposition(filename, isDownload) {
   return `${dispositionType}; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`;
 }
 
-router.get('/', (_req, res) => {
+// The download LIST is private (it reflects the server's stored downloads);
+// only the byte-range SERVE route below stays public so Share/`/play/:id` links
+// keep working for anyone.
+router.get('/', requireAuth, (_req, res) => {
   try {
     const downloads = listDownloads();
     res.json({
@@ -44,6 +48,8 @@ router.get('/', (_req, res) => {
   }
 });
 
+// PUBLIC: byte-range media serving. Intentionally has no auth gate so shared
+// `/play/:id` links play for recipients who never logged in (see 0XC-97).
 router.get('/:downloadId/:filename', (req, res) => {
   const { downloadId, filename } = req.params;
   const { action } = req.query;
@@ -146,7 +152,7 @@ router.get('/:downloadId/:filename', (req, res) => {
   }
 });
 
-router.patch('/:downloadId', (req, res) => {
+router.patch('/:downloadId', requireAuth, (req, res) => {
   const { downloadId } = req.params;
   const kept = req.query.kept === 'true';
 
@@ -171,7 +177,7 @@ router.patch('/:downloadId', (req, res) => {
   }
 });
 
-router.delete('/:downloadId', (req, res) => {
+router.delete('/:downloadId', requireAuth, (req, res) => {
   const { downloadId } = req.params;
   const permanent = req.query.permanent === 'true';
 

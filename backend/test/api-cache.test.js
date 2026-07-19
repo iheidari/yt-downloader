@@ -42,9 +42,13 @@ after(() => {
   if (server) server.kill('SIGKILL');
 });
 
+// Probe `/api/auth/me`: a public, always-present `/api` route (returns 401 with
+// no session, short-circuiting before any DB access). The ETag/no-store
+// behavior under test is app-level middleware, so it applies to every `/api`
+// response regardless of route or status.
 test('API JSON is non-cacheable: no ETag, Cache-Control no-store', async () => {
-  const res = await fetch(`${base}/api/files`);
-  assert.strictEqual(res.status, 200);
+  const res = await fetch(`${base}/api/auth/me`);
+  assert.strictEqual(res.status, 401);
   assert.strictEqual(res.headers.get('etag'), null, 'API responses must not carry an ETag');
   assert.strictEqual(res.headers.get('cache-control'), 'no-store');
 });
@@ -52,17 +56,18 @@ test('API JSON is non-cacheable: no ETag, Cache-Control no-store', async () => {
 test('a full conditional round-trip never yields 304', async () => {
   // Capture whatever validator the first response offers, then replay it — the
   // exact sequence a browser performs. Before the fix the server emitted an
-  // ETag and this replay returned 304; now there's no validator, so it's 200.
-  const first = await fetch(`${base}/api/files`);
+  // ETag and this replay returned 304; now there's no validator, so it never
+  // revalidates to 304.
+  const first = await fetch(`${base}/api/auth/me`);
   const etag = first.headers.get('etag');
   assert.strictEqual(etag, null, 'API must not offer a validator to revalidate against');
 
-  const second = await fetch(`${base}/api/files`, {
+  const second = await fetch(`${base}/api/auth/me`, {
     headers: { 'If-None-Match': etag ?? 'W/"replay"' },
   });
-  assert.strictEqual(
+  assert.notStrictEqual(
     second.status,
-    200,
+    304,
     'API must never return 304 — a cross-origin revalidated 304 breaks the browser fetch',
   );
 });

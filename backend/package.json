@@ -7,6 +7,7 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "cleanup": "node src/services/cleanup.js",
+    "db:init": "node src/dbInit.js",
     "test": "node --test",
     "lint": "biome check .",
     "format": "biome format --write ."
@@ -19,12 +20,16 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "dropbox": "^10.34.0",
     "express": "^4.18.2",
     "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.0",
+    "pg": "^8.22.0",
+    "resend": "^6.17.2",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
