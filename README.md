@@ -157,7 +157,16 @@ PORT=3001
 FRONTEND_URL=http://localhost:5173
 NODE_ENV=development
 MAX_CONCURRENT_DOWNLOADS=3   # max simultaneous downloads (over the cap → HTTP 429)
+
+# Auth + database (magic-link login). See backend/.env.example for details.
+DATABASE_URL=postgres://user:pass@host/db?sslmode=require
+JWT_SECRET=                  # session-cookie JWT secret (generate a random value)
+APP_URL=http://localhost:3001
+RESEND_API_KEY=              # unset in dev → magic link is logged to the console
+EMAIL_FROM=Tubekeep <login@yourdomain>
 ```
+
+Login is an emailed single-use magic link (JWT httpOnly cookie session). Users are managed by hand in the Neon `users` table — there is no signup. Apply the schema once with `cd backend && npm run db:init`. All API routes require a session **except** the public `GET /api/files/:id/:filename` media route, so share links keep working.
 
 **frontend/.env:**
 ```env
@@ -336,17 +345,16 @@ npm run build  # Creates dist/ folder
 ## Security Considerations
 
 - Downloads are stored temporarily and auto-deleted
-- CORS is configured for localhost development only
+- CORS is pinned to `FRONTEND_URL` with credentials enabled (never a wildcard)
 - Helmet provides security headers but CSP is disabled for video streaming
-- No authentication is implemented (single-user tool)
+- Authentication is an emailed single-use magic link → JWT httpOnly cookie session. Users are a closed, hand-managed set in the Neon `users` table (no public signup). All API routes require a session except the public `GET /api/files/:id/:filename` media route (so share links work)
 
 ## Contributing
 
-This is a single-user tool designed for personal use. To add authentication or multi-user support:
-1. Add user session management
-2. Associate downloads with user IDs
-3. Update cleanup service to respect user data
-4. Add persistent database (PostgreSQL, MongoDB, etc.)
+Auth and the database layer now exist (magic-link login, Neon Postgres). Still on the roadmap for full multi-user support:
+1. Frontend login + session UI (consumes the `/api/auth/*` endpoints)
+2. Move download history to Postgres and associate downloads with user IDs
+3. Enforce the per-user storage quota (`users.max_storage_bytes`)
 
 ## License
 

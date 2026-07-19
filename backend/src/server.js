@@ -9,20 +9,36 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const cookieParser = require('cookie-parser');
 const path = require('node:path');
 const fs = require('node:fs');
 
 const infoRoutes = require('./routes/info');
 const downloadRoutes = require('./routes/download');
-const filesRoutes = require('./routes/files');
+const { createFilesRouter } = require('./routes/files');
 const cloudRoutes = require('./routes/cloud');
 const diskRoutes = require('./routes/disk');
+const { createAuthRouter } = require('./routes/auth');
+const { createStore } = require('./services/authStore');
+const { createRequireAuth } = require('./middleware/requireAuth');
+const mailer = require('./services/mailer');
+const { query } = require('./db');
 const { startCleanupScheduler } = require('./services/cleanup');
 const { downloadsDir } = require('./utils/storage');
 const { rateLimit } = require('./utils/rateLimit');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Fail fast on missing required secrets rather than degrading silently (a missing
+// JWT_SECRET otherwise makes every session 401 while /verify 500s). Hard error in
+// production; a warning in dev/test so the spawn-based tests still boot.
+if (!process.env.JWT_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('❌ JWT_SECRET is required in production — refusing to start.');
+  }
+  console.warn('⚠️  JWT_SECRET is not set — auth sessions will not work until it is configured.');
+}
 
 // Never let the browser cache or revalidate dynamic API JSON. Express adds a
 // default weak ETag to res.json responses, so a repeat `GET /api/info` (fresh
@@ -76,14 +92,18 @@ app.use(
   }),
 );
 
-// Configure CORS - allow same-origin requests and configured FRONTEND_URL.
-// No cookies/Authorization are used, so credentials stay off (enabling them
-// alongside a reflected origin is a needless risk).
+// Configure CORS. The magic-link session rides an httpOnly cookie, so credentials
+// must be enabled — but only against a single PINNED origin (FRONTEND_URL), never
+// a wildcard or reflected `*`, which browsers forbid with credentials anyway and
+// which would let any site drive the authenticated API. When FRONTEND_URL is
+// unset we serve same-origin only (`origin: false` emits no ACAO header), which
+// is the single-server production layout.
 const corsOrigin = process.env.FRONTEND_URL || false; // false = allow same-origin only
 
 app.use(
   cors({
     origin: corsOrigin,
+    credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Range'],
     exposedHeaders: ['Content-Range', 'Content-Length', 'Accept-Ranges'],
@@ -92,6 +112,7 @@ app.use(
 
 app.use(morgan('dev'));
 app.use(express.json());
+app.use(cookieParser());
 
 if (!fs.existsSync(downloadsDir)) {
   fs.mkdirSync(downloadsDir, { recursive: true });
@@ -104,15 +125,29 @@ app.use('/api', (_req, res, next) => {
   next();
 });
 
+// One shared store (over the single pg pool) feeds every consumer, and one
+// requireAuth is built from it — no per-router duplication.
+const store = createStore(query);
+const requireAuth = createRequireAuth(store);
+
+// Auth endpoints are public (they establish the session). The magic-link
+// request route is rate-limited inside the router; the store + mailer are
+// injected so the same router is unit-testable without Postgres/Resend.
+app.use('/api/auth', createAuthRouter({ store, mailer }));
+
+// Everything below requires a valid session (`requireAuth` → 401 otherwise),
+// EXCEPT the public byte-range file serve route, which is gated inside the files
+// router (public serve route first, then a requireAuth choke) so shared
+// `/play/:id` links keep working for logged-out visitors.
 // Throttle the endpoints that each shell out to yt-dlp. Generous limits: this
 // is a personal app, so the goal is only to cap runaway abuse, not normal use.
-app.use('/api/info', rateLimit({ windowMs: 60_000, max: 30 }), infoRoutes);
-app.use('/api/download', rateLimit({ windowMs: 60_000, max: 40 }), downloadRoutes);
-app.use('/api/files', filesRoutes);
-app.use('/api/disk', rateLimit({ windowMs: 60_000, max: 60 }), diskRoutes);
+app.use('/api/info', rateLimit({ windowMs: 60_000, max: 30 }), requireAuth, infoRoutes);
+app.use('/api/download', rateLimit({ windowMs: 60_000, max: 40 }), requireAuth, downloadRoutes);
+app.use('/api/files', createFilesRouter(requireAuth));
+app.use('/api/disk', rateLimit({ windowMs: 60_000, max: 60 }), requireAuth, diskRoutes);
 // OAuth exchange + upload kick-off talk to a provider; throttle per-IP. The SSE
 // progress stream shares this generous window (60/min absorbs reconnects).
-app.use('/api/cloud', rateLimit({ windowMs: 60_000, max: 60 }), cloudRoutes);
+app.use('/api/cloud', rateLimit({ windowMs: 60_000, max: 60 }), requireAuth, cloudRoutes);
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
