@@ -30,6 +30,11 @@ export function PlayerProvider({ children }) {
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [loadError, setLoadError] = useState(false)
+  const [playbackRate, setPlaybackRateState] = useState(1)
+  // Loading a new source resets the element's playbackRate to 1, so the chosen
+  // rate is mirrored here and reapplied on loadedmetadata (see below). A ref
+  // holds it for the metadata listener, whose effect runs once with no deps.
+  const rateRef = useRef(1)
 
   // Move the element to the most specific mounted host (stage > dock > home).
   const placeMedia = useCallback(() => {
@@ -88,7 +93,11 @@ export function PlayerProvider({ children }) {
     const onPlay = () => setIsPlaying(true)
     const onPause = () => setIsPlaying(false)
     const onTime = () => setCurrentTime(media.currentTime || 0)
-    const onMeta = () => setDuration(media.duration || 0)
+    const onMeta = () => {
+      setDuration(media.duration || 0)
+      // A fresh source starts at 1×; restore the user's chosen rate.
+      media.playbackRate = rateRef.current
+    }
     // Trust the element's own MediaError: it's set on a real failure (e.g. an
     // expired file 404ing) and cleared by load() on teardown, so this shows the
     // friendly "unable to play" stage without false positives — and without
@@ -147,6 +156,14 @@ export function PlayerProvider({ children }) {
     if (media && Number.isFinite(time)) media.currentTime = time
   }, [])
 
+  const setRate = useCallback((rate) => {
+    if (!Number.isFinite(rate)) return
+    rateRef.current = rate
+    const media = mediaRef.current
+    if (media) media.playbackRate = rate
+    setPlaybackRateState(rate)
+  }, [])
+
   // Callbacks are useCallback-stable, so this only re-identifies when the state
   // values actually change — sibling HistoryContext does the same.
   const value = useMemo(
@@ -157,10 +174,12 @@ export function PlayerProvider({ children }) {
       currentTime,
       duration,
       loadError,
+      playbackRate,
       playTrack,
       closePlayer,
       togglePlay,
       seek,
+      setRate,
       registerStage,
       registerDock,
     }),
@@ -171,10 +190,12 @@ export function PlayerProvider({ children }) {
       currentTime,
       duration,
       loadError,
+      playbackRate,
       playTrack,
       closePlayer,
       togglePlay,
       seek,
+      setRate,
       registerStage,
       registerDock,
     ],
