@@ -4,6 +4,7 @@ import MoveToCloud from '../components/MoveToCloud'
 import { useHistory } from '../context/useHistory'
 import { useDownloadProgress } from '../hooks/useDownloadProgress'
 import { useShareLink } from '../hooks/useShareLink'
+import { providerLabel } from '../lib/cloud'
 import { fileExpiryLabel, fileUrl, formatFileSize, mediaKind } from '../lib/media'
 
 const FILTERS = [
@@ -263,6 +264,7 @@ function ExpiredCard({ download, onForget }) {
 function MovedCard({ download, onForget }) {
   const isAudio = mediaKind(download) === 'audio'
   const link = download.moved?.link
+  const label = providerLabel(download.moved?.provider)
 
   return (
     <div className="group bg-surface-container-lowest border border-surface-variant rounded-lg p-4 flex flex-col sm:flex-row gap-4">
@@ -295,10 +297,11 @@ function MovedCard({ download, onForget }) {
               <span
                 className="material-symbols-outlined text-[14px]"
                 style={{ fontVariationSettings: "'FILL' 1" }}
+                aria-hidden="true"
               >
                 cloud_done
               </span>
-              In Dropbox
+              In {label}
             </span>
           </div>
           {download.url && (
@@ -312,7 +315,7 @@ function MovedCard({ download, onForget }) {
             </a>
           )}
           <p className="font-label-sm text-label-sm text-on-surface-variant/70 mt-2">
-            This file is now in your Dropbox and has been removed from our server.
+            This file is now in your {label} and has been removed from our server.
           </p>
         </div>
 
@@ -325,12 +328,14 @@ function MovedCard({ download, onForget }) {
                 rel="noopener noreferrer"
                 className="bg-primary text-on-primary px-6 py-2 rounded-md font-label-md text-label-md flex items-center gap-2 hover:opacity-90 active:scale-95 transition-all"
               >
-                <span className="material-symbols-outlined text-[18px]">open_in_new</span>
-                Open in Dropbox
+                <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                  open_in_new
+                </span>
+                Open in {label}
               </a>
             ) : (
               <span className="text-on-surface-variant/60 font-label-sm text-label-sm">
-                Saved to Dropbox
+                Saved to {label}
               </span>
             )}
             {download.url && <RedownloadLink url={download.url} />}
@@ -577,7 +582,7 @@ function DownloadsPage() {
           <h2 className="font-headline-lg text-headline-lg text-ink mb-2">Your downloads</h2>
           <p className="font-body-md text-body-md text-muted max-w-[52ch]">
             Files clear from the server after {fileExpiryLabel()}. Pin one to keep it, or move it to
-            your Dropbox — expired files can be re-downloaded from the source.
+            your cloud — expired files can be re-downloaded from the source.
           </p>
         </div>
         <div className="flex items-center gap-2 bg-surface-container-low p-1 rounded-lg">

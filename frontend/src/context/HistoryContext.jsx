@@ -226,8 +226,8 @@ export function HistoryProvider({ children }) {
 
   // Flag a download as moved to the visitor's cloud. The server keeps the
   // metadata row (source URL + cloud link) but drops the media, so we only
-  // update local state: the row stays visible as a "Moved" card with an "Open
-  // in Dropbox" link.
+  // update local state: the row stays visible as a "Moved" card with an
+  // "Open in <provider>" link.
   const markMoved = useCallback((downloadId, info) => {
     setHistory((prev) =>
       prev.map((d) => (d.downloadId === downloadId ? { ...d, moved: info || {} } : d)),

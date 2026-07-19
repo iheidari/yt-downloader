@@ -1,8 +1,9 @@
 // Load backend/.env FIRST — before any module reads process.env. Without this
-// FRONTEND_URL (CORS origin) and the DROPBOX_* creds in .env are never applied,
-// so cross-origin requests get no Access-Control-Allow-Origin and the cloud
-// feature stays disabled. Requires must come after so their module-load-time
-// env reads (e.g. services/cloud/dropbox.js) see the loaded values.
+// FRONTEND_URL (CORS origin) and the cloud-provider creds (DROPBOX_*/GOOGLE_*)
+// in .env are never applied, so cross-origin requests get no
+// Access-Control-Allow-Origin and the cloud feature stays disabled. Requires
+// must come after so their module-load-time env reads (e.g.
+// services/cloud/dropbox.js, services/cloud/googledrive.js) see the values.
 require('dotenv').config();
 
 const express = require('express');
@@ -77,9 +78,10 @@ app.use(
     },
     crossOriginResourcePolicy: { policy: 'cross-origin' }, // Allow cross-origin resource sharing
     crossOriginEmbedderPolicy: false, // Allow embedding media
-    // The Dropbox "Move to cloud" flow opens a consent popup that navigates
-    // cross-origin (dropbox.com) and relays the auth code back to its opener via
-    // postMessage. Helmet's default COOP `same-origin` severs window.opener the
+    // The "Move to cloud" flow opens a provider consent popup that navigates
+    // cross-origin (dropbox.com / accounts.google.com) and relays the auth code
+    // back to its opener via postMessage. Helmet's default COOP `same-origin`
+    // severs window.opener the
     // moment the popup goes cross-origin, so the callback lands with a null
     // opener and the flow hangs. `same-origin-allow-popups` keeps the reference
     // to popups this page opened while still isolating us from other openers.

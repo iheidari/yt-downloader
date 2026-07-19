@@ -1,9 +1,10 @@
-# Cloud Upload ("Move to Dropbox") — Design & Next Steps
+# Cloud Upload ("Move to cloud") — Design & Next Steps
 
-> Status: **v1 implemented** (Dropbox only). This document is the agreed design from the
-> design interview; OneDrive and Google Drive remain fast-follows. See "Implementation" below
-> for where the code lives. To enable it, set the Dropbox env vars (see
-> [dropbox-setup.md](./dropbox-setup.md)); with them unset the feature is cleanly hidden.
+> Status: **implemented** for **Dropbox and Google Drive**. This document is the agreed design
+> from the design interview; OneDrive remains a fast-follow. See "Implementation" below for where
+> the code lives. To enable a provider, set its env vars (Dropbox →
+> [dropbox-setup.md](./dropbox-setup.md); Google Drive → [google-drive-setup.md](./google-drive-setup.md));
+> with them unset that provider is cleanly hidden from the "Move to cloud" menu.
 
 ## Goal
 
@@ -57,7 +58,7 @@ server → hand to the visitor's cloud → forget.
   S3-compatible (B2/R2/Wasabi) — these use pasted credentials/keys, not per-visitor OAuth, so
   they do **not** fit the OAuth interface. Do not contort the OAuth interface for them.
 - All OAuth providers behind one `CloudProvider` interface:
-  `getAuthUrl`, `exchangeCode`, `refresh`, `resumableUpload`.
+  `isEnabled`, `getPublicConfig`, `exchangeCode`, `refresh`, `upload` (the shipped shape).
 
 ### Dropbox specifics
 - **App-folder permission model** (not full Dropbox). Files land in `/Apps/Tubekeep/`. No folder
@@ -114,17 +115,28 @@ server → hand to the visitor's cloud → forget.
 ---
 
 ## New env vars
+Each provider is independent — configure any subset; a provider appears in the menu only
+when all of its required creds are set. See `backend/.env.example` / `frontend/.env.example`
+for the full list.
 ```
 # backend/.env
 DROPBOX_APP_KEY=...
 DROPBOX_APP_SECRET=...
 DROPBOX_REDIRECT_URI=https://<host>/oauth/callback   # exact match; add localhost for dev
 
-# frontend/.env
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REDIRECT_URI=https://<host>/oauth/callback    # exact match; add localhost for dev
+GOOGLE_DRIVE_FOLDER=Tubekeep                          # optional; default "Tubekeep"
+
+# frontend/.env  (optional — only to OVERRIDE the values the backend publishes)
 VITE_DROPBOX_APP_KEY=...          # public app key for the popup/PKCE
 VITE_DROPBOX_REDIRECT_URI=...     # exact-match redirect URI
+VITE_GOOGLE_CLIENT_ID=...         # public client id for the popup/PKCE
+VITE_GOOGLE_REDIRECT_URI=...      # exact-match redirect URI
 ```
-See **[dropbox-setup.md](./dropbox-setup.md)** for how to obtain these.
+See **[dropbox-setup.md](./dropbox-setup.md)** and **[google-drive-setup.md](./google-drive-setup.md)**
+for how to obtain these.
 
 ---
 
@@ -134,17 +146,23 @@ See **[dropbox-setup.md](./dropbox-setup.md)** for how to obtain these.
     Dropbox's `/oauth2/token`), account lookup, and the chunked upload engine (8 MB single-shot
     threshold, upload sessions above it, per-chunk retry, disk streaming, typed CloudError codes
     `auth`/`quota`/`upload`). Builds the no-scope "Open in Dropbox" deep link.
+  - `services/cloud/googledrive.js` — provider: PKCE/secret token exchange + refresh (direct to
+    Google's `/token`), and the resumable-upload engine (find-or-create the "Tubekeep" folder,
+    8 MB chunked PUTs to a resumable session, per-chunk retry, disk streaming, same typed
+    CloudError codes `auth`/`quota`/`upload`). Uses the `drive.file` scope (app-created files only).
   - `services/cloud/index.js` — provider registry (`getProvider`, `listEnabledProviders`).
   - `services/cloud/jobs.js` — in-memory job manager: concurrency cap (3), queue, per-job
     EventEmitter, hard TTL (30m), token cleared the instant a job settles. On success calls
-    `deleteDownload()`.
+    `markMoved()` (keeps the metadata row + cloud link, drops the local media) — **not** the
+    hard-delete "Model A" sketched in the design section above; that was never shipped.
   - `routes/cloud.js` — `GET /providers`, `POST /oauth/token`, `POST /oauth/refresh`,
     `POST /upload` (token in body → jobId), `GET /upload/:jobId/progress` (SSE). Mounted at
     `/api/cloud` with per-IP rate limiting.
 - **Frontend**
-  - `lib/dropbox.js` — PKCE (Web Crypto), popup connect, sessionStorage token store,
-    refresh-aware `getFreshAccessToken()`. Config resolved from `/api/cloud/providers` (VITE_
-    vars optional overrides).
+  - `lib/cloud.js` — generic, data-driven by a per-provider table (Dropbox, Google Drive): PKCE
+    (Web Crypto), popup connect, per-provider sessionStorage token store, refresh-aware
+    `getFreshAccessToken(provider)`, `getEnabledProviders()`. Config resolved from
+    `/api/cloud/providers` (VITE_ vars optional overrides).
   - `pages/OAuthCallbackPage.jsx` + `/oauth/callback` route (standalone, outside the app shell).
   - `hooks/useCloudMove.js` + `components/MoveToCloud.jsx` — the button/progress/fallback UI.
   - `context/HistoryContext.jsx` — `markMoved`/`dropLocal`; sync preserves moved rows locally.
@@ -158,7 +176,8 @@ See **[dropbox-setup.md](./dropbox-setup.md)** for how to obtain these.
 ## Out of scope (parked)
 - **Subscription / retention tier:** paid users get files stored *by us* with a
   user-defined retention period. Future feature, not this change.
-- **OneDrive, Google Drive, Box, pCloud, WebDAV, S3** connectors (roadmap above).
+- **OneDrive, Box, pCloud, WebDAV, S3** connectors (roadmap above). *(Google Drive shipped —
+  see Implementation.)*
 
 ## Future hardening (make it stronger)
 - Optional **real auth** / accounts for users who want "connect once, remembered."

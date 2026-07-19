@@ -104,10 +104,14 @@ Google rejects any mismatch with `redirect_uri_mismatch`.
 GOOGLE_CLIENT_ID=your_client_id
 GOOGLE_CLIENT_SECRET=your_client_secret
 GOOGLE_REDIRECT_URI=https://<your-host>/oauth/callback
+# Optional — destination folder name in the user's My Drive (default "Tubekeep").
+GOOGLE_DRIVE_FOLDER=Tubekeep
 
-# frontend/.env
+# frontend/.env (only to OVERRIDE the values the backend already publishes)
 VITE_GOOGLE_CLIENT_ID=your_client_id
 VITE_GOOGLE_REDIRECT_URI=https://<your-host>/oauth/callback
 ```
 
 Never commit `.env` or the client secret. The secret must exist only on the backend.
+Uploaded files land in a dedicated **Tubekeep** folder in the user's My Drive; the
+`drive.file` scope means Tubekeep can never see the rest of their Drive.
