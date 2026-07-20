@@ -151,3 +151,41 @@ test('a failed start (over the concurrency cap) rolls its row back', async () =>
   assert.equal((await store.listByUser(USER)).length, 0);
   assert.equal(await store.usageForUser(USER), 0);
 });
+
+// --- DELETE /api/download/:id (cancel) -------------------------------------
+// The real download manager's cancelJob() runs here; it returns false for an id
+// it has never seen, so no job (and no yt-dlp process) is ever involved.
+
+const cancel = (downloadId) => fetch(`${base}/api/download/${downloadId}`, { method: 'DELETE' });
+
+test('cancelling drops the caller’s in-flight row so it stops occupying the quota', async () => {
+  const res = await start({ filesize: 10 * MB });
+  const { downloadId } = (await res.json()).data;
+
+  const cancelled = await cancel(downloadId);
+
+  assert.equal(cancelled.status, 200);
+  assert.equal((await cancelled.json()).success, true);
+  assert.equal(await store.findForUser(downloadId, USER), null);
+  assert.equal(await store.usageForUser(USER), 0);
+});
+
+test('cancelling another user’s download is 404 and leaves their row running', async () => {
+  const res = await start({ filesize: 10 * MB });
+  const { downloadId } = (await res.json()).data;
+
+  // Same id, different session.
+  user = { user_id: OTHER, max_storage_bytes: 5 * GB };
+  const cancelled = await cancel(downloadId);
+
+  assert.equal(cancelled.status, 404);
+  assert.equal((await cancelled.json()).success, false);
+  assert.equal((await store.findForUser(downloadId, USER)).status, 'downloading');
+});
+
+test('cancelling an unknown download id is 404', async () => {
+  const res = await cancel('44444444-4444-4444-4444-444444444444');
+
+  assert.equal(res.status, 404);
+  assert.equal((await res.json()).error, 'Download not found');
+});
