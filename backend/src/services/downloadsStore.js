@@ -93,7 +93,10 @@ function createStore(query) {
     async markComplete(downloadId, { filename, filesize }) {
       await query(
         `UPDATE downloads
-            SET status = 'complete', filename = $2, filesize = coalesce($3, filesize)
+            SET status = 'complete',
+                completed_at = now(),
+                filename = $2,
+                filesize = coalesce($3, filesize)
           WHERE download_id = $1`,
         [downloadId, filename ?? null, filesize ?? null],
       );
@@ -112,8 +115,10 @@ function createStore(query) {
     //
     // `presentIds` is a snapshot of the directory, so a download that COMPLETES
     // while the sweep is running is absent from it through no fault of its own —
-    // and would be expired the moment it landed. `graceMs` spares rows younger
-    // than that window, which is always longer than a sweep takes.
+    // and would be expired the moment it landed. `graceMs` spares rows that
+    // finished within that window, which is always longer than a sweep takes.
+    // Measured from COMPLETION, not creation: a download that ran for longer
+    // than the grace period would otherwise be born already past it.
     async expireMissing(presentIds, graceMs = 0) {
       const { rowCount } = await query(
         `UPDATE downloads
@@ -121,7 +126,7 @@ function createStore(query) {
           WHERE NOT expired
             AND NOT moved
             AND status = 'complete'
-            AND created_at < now() - ($2::bigint * interval '1 ms')
+            AND coalesce(completed_at, created_at) < now() - ($2::bigint * interval '1 ms')
             AND NOT (download_id = ANY($1::uuid[]))`,
         [presentIds || [], Math.max(0, Math.floor(graceMs))],
       );
@@ -149,11 +154,17 @@ function createStore(query) {
       return rowCount;
     },
 
+    // Expire = the media is gone but the row stays (re-downloadable). Only a
+    // COMPLETED download can be expired: expiring one that is still running
+    // would exclude it from the quota forever, since the job's markComplete
+    // then writes the real size onto an already-expired row and expireMissing
+    // (WHERE NOT expired) can never reconcile it back. An in-flight download is
+    // stopped with the cancel route instead, which deletes the row outright.
     async expireForUser(downloadId, userId) {
       const { rowCount } = await query(
         `UPDATE downloads
             SET expired = true, expired_at = now()
-          WHERE download_id = $1 AND user_id = $2`,
+          WHERE download_id = $1 AND user_id = $2 AND status = 'complete'`,
         [downloadId, userId],
       );
       return rowCount > 0;
@@ -196,6 +207,7 @@ function createMemoryStore({ rows = [] } = {}) {
         filename: null,
         filesize: filesize ?? null,
         status: 'downloading',
+        completed_at: null,
         expired: false,
         expired_at: null,
         moved: false,
@@ -225,6 +237,7 @@ function createMemoryStore({ rows = [] } = {}) {
       const row = byId.get(downloadId);
       if (!row) return;
       row.status = 'complete';
+      row.completed_at = new Date();
       row.filename = filename ?? null;
       if (filesize !== null && filesize !== undefined) row.filesize = filesize;
     },
@@ -241,7 +254,7 @@ function createMemoryStore({ rows = [] } = {}) {
           !row.expired &&
           !row.moved &&
           row.status === 'complete' &&
-          new Date(row.created_at).getTime() < cutoff &&
+          new Date(row.completed_at || row.created_at).getTime() < cutoff &&
           !present.has(row.download_id)
         ) {
           row.expired = true;
@@ -270,7 +283,7 @@ function createMemoryStore({ rows = [] } = {}) {
     },
     async expireForUser(downloadId, userId) {
       const row = byId.get(downloadId);
-      if (!row || row.user_id !== userId) return false;
+      if (!row || row.user_id !== userId || row.status !== 'complete') return false;
       row.expired = true;
       row.expired_at = new Date();
       return true;

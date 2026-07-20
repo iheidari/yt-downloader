@@ -1,4 +1,9 @@
-const { cleanupOldDownloads, listDownloads } = require('../utils/storage');
+const {
+  cleanupOldDownloads,
+  cleanupOrphanDirs,
+  listDownloads,
+  isValidDownloadId,
+} = require('../utils/storage');
 const { sweepJobs } = require('./downloadManager');
 
 const CLEANUP_INTERVAL_HOURS = 1;
@@ -8,7 +13,8 @@ const MAX_FILE_AGE_HOURS = 1;
 
 // A `downloading` history row older than this can't still be running — the job
 // registry is in-memory, so a restart strands its row. Generously past the
-// longest plausible download so a slow-but-live one is never retired early.
+// longest plausible download so a slow-but-live one is never retired early. The
+// orphan-directory sweep uses the same window, for the same reason.
 const STALE_DOWNLOADING_MS = 6 * 60 * 60 * 1000;
 
 // A download that finishes *while* the sweep is running is missing from the
@@ -78,7 +84,10 @@ async function runCleanup(store = null) {
       const expiredNow = new Set(result.expiredIds);
       const present = downloads
         .filter((d) => !d.expired && !expiredNow.has(d.downloadId))
-        .map((d) => d.downloadId);
+        .map((d) => d.downloadId)
+        // The ids become a ::uuid[] parameter, so one non-UUID directory name
+        // would abort the whole reconcile with a cast error.
+        .filter(isValidDownloadId);
       const reconciled = await store.expireMissing(present, RECONCILE_GRACE_MS);
       if (reconciled > 0) {
         console.log(`🧹 Marked ${reconciled} history row(s) expired`);
@@ -94,6 +103,14 @@ async function runCleanup(store = null) {
 
   if (result.errors.length > 0) {
     console.error('⚠️ Cleanup errors:', result.errors);
+  }
+
+  // Sweep directories with no metadata.json — debris from a download that died
+  // mid-flight or a subprocess that flushed after its cancel. Nothing lists
+  // them, so this is the only thing that reclaims their disk.
+  const orphans = cleanupOrphanDirs(STALE_DOWNLOADING_MS);
+  if (orphans.removed > 0) {
+    console.log(`🧹 Removed ${orphans.removed} orphaned download dir(s)`);
   }
 
   // Prune terminal (complete/error) download-job records the manager retains for

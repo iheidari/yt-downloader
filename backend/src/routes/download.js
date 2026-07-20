@@ -199,9 +199,29 @@ function createDownloadRouter({ store, start = startJob }) {
   // machine). Disconnecting only unsubscribes; the job keeps running server-side.
   // An unknown id yields a terminal "download not found" error (e.g. after a
   // server restart) instead of starting a download.
-  router.get('/progress/:downloadId', (req, res) => {
+  //
+  // Scoped to the caller's own downloads: the `complete` frame carries the
+  // stored filename, which is the one thing a stranger needs to pull the file
+  // off the public serve route. Someone else's id is reported as not found,
+  // exactly like an id that never existed.
+  router.get('/progress/:downloadId', async (req, res) => {
     const { downloadId } = req.params;
     const sendEvent = initSSE(res);
+
+    let owned = false;
+    if (isValidDownloadId(downloadId)) {
+      try {
+        owned = (await store.findForUser(downloadId, req.user.user_id)) !== null;
+      } catch (err) {
+        console.error(`❌ Progress ownership check failed (${downloadId}): ${err.message}`);
+        sendEvent({ type: 'error', downloadId, error: 'Could not open the progress stream' });
+        return res.end();
+      }
+    }
+    if (!owned) {
+      sendEvent({ type: 'error', downloadId, error: 'Download not found' });
+      return res.end();
+    }
 
     let heartbeatInterval = null;
     const stopHeartbeat = () => {

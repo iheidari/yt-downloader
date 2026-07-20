@@ -8,6 +8,7 @@ const {
   expireDownload,
   setKept,
 } = require('../utils/storage');
+const { cancelJob } = require('../services/downloadManager');
 
 // RFC 5987 encoding for unicode filenames in Content-Disposition header
 function encodeRFC5987(filename) {
@@ -31,7 +32,7 @@ function getContentDisposition(filename, isDownload) {
 // Build the files router. `requireAuth` and the per-user history `store` are
 // injected (both built once in server.js over the shared pg pool) so the auth
 // wiring is consistent with the other routers and unit-testable without Postgres.
-function createFilesRouter(requireAuth, { store } = {}) {
+function createFilesRouter(requireAuth, { store }) {
   const router = express.Router();
 
   // PUBLIC: byte-range media serving. Declared FIRST, above the requireAuth choke
@@ -180,36 +181,47 @@ function createFilesRouter(requireAuth, { store } = {}) {
 
   // Two-tier destroy, both scoped to the caller's own rows (the ownership check
   // IS the store's WHERE user_id, so another user's id reads as "not found"):
-  //   default          → expire: drop the media, keep the row (re-downloadable)
-  //   ?permanent=true  → delete: drop the media AND the row
+  //   default          → expire: drop the media, keep the row (re-downloadable).
+  //                      Complete downloads only — see expireForUser.
+  //   ?permanent=true  → delete: drop the media AND the row, stopping the job
+  //                      first if one is still running.
   // Either way the freed bytes stop counting toward the user's quota.
   router.delete('/:downloadId', async (req, res) => {
     const { downloadId } = req.params;
     const permanent = req.query.permanent === 'true';
     if (!isValidDownloadId(downloadId)) return notFound(res);
 
+    let ok;
     try {
-      const ok = permanent
+      ok = permanent
         ? await store.deleteForUser(downloadId, req.user.user_id)
         : await store.expireForUser(downloadId, req.user.user_id);
-      if (!ok) return notFound(res);
+    } catch (error) {
+      console.error('❌ Download delete error:', error.message);
+      return res.status(500).json({ success: false, error: 'Failed to remove the download' });
+    }
+    if (!ok) return notFound(res);
 
-      // The row is gone/expired either way; a missing directory (already swept
-      // by cleanup) is not an error here.
+    // Past this point the row has already changed and the caller's intent is
+    // recorded, so a filesystem failure is logged rather than reported as a
+    // failed request — the hourly sweep reconciles whatever is left on disk.
+    try {
       if (permanent) {
+        // The row is gone, so nothing would ever point at a still-running job's
+        // output. Stop it before removing the directory.
+        cancelJob(downloadId);
         deleteDownload(downloadId);
       } else {
         expireDownload(downloadId);
       }
-
-      res.json({
-        success: true,
-        message: permanent ? 'Download deleted permanently' : 'Download expired',
-      });
     } catch (error) {
-      console.error('❌ Download delete error:', error.message);
-      res.status(500).json({ success: false, error: 'Failed to remove the download' });
+      console.error(`⚠️  Media cleanup failed for ${downloadId}: ${error.message}`);
     }
+
+    res.json({
+      success: true,
+      message: permanent ? 'Download deleted permanently' : 'Download expired',
+    });
   });
 
   return router;

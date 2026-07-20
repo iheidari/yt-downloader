@@ -248,6 +248,43 @@ function markMoved(downloadId, moveInfo) {
 
 // `downloads` defaults to a fresh scan; callers that already hold a listing pass
 // it in so one sweep doesn't walk the downloads directory twice.
+// Remove download directories that carry no metadata.json and haven't been
+// touched in `maxAgeMs`. Such a directory is debris, not a download: metadata is
+// written on completion, so anything without it either died mid-flight or was
+// recreated by a yt-dlp process still flushing after its abort was requested
+// (the cancel route removes the directory synchronously, but the subprocess
+// exits asynchronously). listDownloads skips these, so the age-based sweep can
+// never reach them and they would sit on disk forever.
+//
+// `maxAgeMs` must stay well past the longest plausible download: a directory's
+// mtime only changes when an entry is added or removed, so a slow single-file
+// download can look untouched the whole time it is running. Callers pass the
+// same window used to declare an in-flight download stranded.
+function cleanupOrphanDirs(maxAgeMs = 6 * 60 * 60 * 1000) {
+  let entries;
+  try {
+    entries = fs.readdirSync(downloadsDir, { withFileTypes: true });
+  } catch {
+    return { removed: 0, removedIds: [] };
+  }
+
+  const cutoff = Date.now() - maxAgeMs;
+  const removedIds = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !isValidDownloadId(entry.name)) continue;
+    const dirPath = path.join(downloadsDir, entry.name);
+    try {
+      if (fs.existsSync(path.join(dirPath, METADATA_FILE))) continue;
+      if (fs.statSync(dirPath).mtimeMs >= cutoff) continue;
+      fs.rmSync(dirPath, { recursive: true, force: true });
+      removedIds.push(entry.name);
+    } catch (err) {
+      console.error(`⚠️  Could not remove orphan dir ${entry.name}: ${err.message}`);
+    }
+  }
+  return { removed: removedIds.length, removedIds };
+}
+
 function cleanupOldDownloads(maxAgeHours = 24, downloads = listDownloads()) {
   const now = Date.now();
   const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
@@ -298,4 +335,5 @@ module.exports = {
   markMoved,
   setKept,
   cleanupOldDownloads,
+  cleanupOrphanDirs,
 };

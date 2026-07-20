@@ -61,6 +61,21 @@ test('expiring frees the bytes; permanent delete removes the row entirely', asyn
   assert.equal(await store.findForUser('a', USER), null);
 });
 
+test('an in-flight download cannot be expired — that would hide its bytes forever', async () => {
+  const store = createMemoryStore();
+  await store.insert({ downloadId: 'running', userId: USER, filesize: 800 });
+
+  // Expiring it here would exclude it from usage permanently: markComplete then
+  // writes the real size onto an already-expired row, and expireMissing (which
+  // only touches NOT expired rows) can never reconcile it back.
+  assert.equal(await store.expireForUser('running', USER), false);
+
+  await store.markComplete('running', { filename: 'r.mp4', filesize: 900 });
+  assert.equal(await store.usageForUser(USER), 900);
+  assert.equal(await store.expireForUser('running', USER), true);
+  assert.equal(await store.usageForUser(USER), 0);
+});
+
 test('another user’s id is "not found" for every mutating operation', async () => {
   const store = createMemoryStore();
   await seed(store, 'a', USER, 800);
@@ -100,9 +115,11 @@ test('expireMissing retires rows whose media is gone, keeping those still on dis
   await seed(store, 'vanished', USER, 100);
   await store.insert({ downloadId: 'running', userId: USER, filesize: 100 });
   // Age them past the grace window (asserted separately below) so this case is
-  // only about presence on disk, not about how recently the row was created.
+  // only about presence on disk, not about how recently they finished.
   for (const id of ['onDisk', 'vanished', 'running']) {
-    store._rows.get(id).created_at = new Date(Date.now() - 60 * 60 * 1000);
+    const row = store._rows.get(id);
+    row.created_at = new Date(Date.now() - 60 * 60 * 1000);
+    if (row.completed_at) row.completed_at = row.created_at;
   }
 
   assert.equal(await store.expireMissing(['onDisk', 'running']), 1);
@@ -118,7 +135,9 @@ test('expireMissing spares rows younger than the grace window', async () => {
   // snapshot the reconcile compares against — it must not be expired on arrival.
   await seed(store, 'justLanded', USER, 100);
   await seed(store, 'longGone', USER, 100);
-  store._rows.get('longGone').created_at = new Date(Date.now() - 60 * 60 * 1000);
+  // The window runs from COMPLETION, not creation — a download that ran for
+  // hours must not be born already past its grace period.
+  store._rows.get('longGone').completed_at = new Date(Date.now() - 60 * 60 * 1000);
 
   assert.equal(await store.expireMissing([], 10 * 60 * 1000), 1);
   assert.equal((await store.findForUser('justLanded', USER)).expired, false);

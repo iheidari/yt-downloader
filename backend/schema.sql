@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS downloads (
   filename    text,
   filesize    bigint,
   status      text,
+  completed_at timestamptz,
   expired     boolean NOT NULL DEFAULT false,
   expired_at  timestamptz,
   moved       boolean NOT NULL DEFAULT false,
@@ -67,6 +68,7 @@ CREATE TABLE IF NOT EXISTS downloads (
 -- Added after the table shipped in 0XC-97; keeps re-running this file safe on a
 -- database that already has the original definition.
 ALTER TABLE downloads ADD COLUMN IF NOT EXISTS moved_info jsonb;
+ALTER TABLE downloads ADD COLUMN IF NOT EXISTS completed_at timestamptz;
 
 -- The listing query is always "this user's rows, newest first".
 CREATE INDEX IF NOT EXISTS downloads_user_id_idx ON downloads (user_id);
