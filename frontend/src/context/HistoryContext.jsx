@@ -1,31 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch, fetchDownloads, fileUrl } from '../lib/media'
-import {
-  EXPIRED_STORAGE_KEY,
-  HISTORY_API_URL,
-  HISTORY_STORAGE_KEY,
-  HistoryContext,
-} from './historyContext.js'
+import { HISTORY_API_URL, HistoryContext, LEGACY_HISTORY_KEYS } from './historyContext.js'
+import { useAuth } from './useAuth.js'
 
-function loadKey(key) {
-  try {
-    const saved = localStorage.getItem(key)
-    if (saved) return JSON.parse(saved)
-  } catch (err) {
-    console.error(`❌ Error loading ${key} from localStorage:`, err)
-  }
-  return []
-}
+// The per-user `downloads` table is the source of truth for history (0XC-100).
+// This provider is a cache of it: it loads the user's rows on mount (and again
+// whenever the signed-in user changes), applies each mutation optimistically for
+// a responsive UI, and sends the matching request to the server. Nothing is
+// persisted in the browser any more — a reload re-reads the server, so history
+// follows the account across devices instead of the machine.
 
+// Attach the playable/downloadable URL. A row without a filename (still
+// downloading, failed, or expired) has no file to point at, so it's left alone
+// rather than given a URL to nowhere.
 function decorate(d) {
+  if (!d.filename) return d
   return {
     ...d,
     fileUrl: fileUrl(HISTORY_API_URL, d.downloadId, d.filename),
   }
 }
 
-// Hard-delete a download's server-side row (metadata included). Used when the
-// visitor permanently forgets an expired or moved card.
+const byNewest = (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+
+// Hard-delete a download's server-side row (media included). Used when the
+// visitor permanently forgets an expired, moved, or failed card.
 async function forgetOnServer(downloadId) {
   try {
     await apiFetch(`${HISTORY_API_URL}/api/files/${downloadId}?permanent=true`, {
@@ -36,66 +35,70 @@ async function forgetOnServer(downloadId) {
   }
 }
 
+// One-time sweep of the pre-0XC-100 localStorage history, so an upgrading
+// visitor doesn't carry a dead copy of someone's list around forever.
+function clearLegacyStorage() {
+  for (const key of LEGACY_HISTORY_KEYS) {
+    try {
+      localStorage.removeItem(key)
+    } catch {
+      // ignore unavailable localStorage
+    }
+  }
+}
+
 export function HistoryProvider({ children }) {
-  const [history, setHistory] = useState(() => loadKey(HISTORY_STORAGE_KEY))
-  const [expired, setExpired] = useState(() => loadKey(EXPIRED_STORAGE_KEY))
+  const { user } = useAuth()
+  const [history, setHistory] = useState([])
+  const [expired, setExpired] = useState([])
   const historyRef = useRef(history)
   const expiredRef = useRef(expired)
 
   useEffect(() => {
     historyRef.current = history
-    try {
-      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history))
-    } catch (err) {
-      console.error('❌ Error saving history to localStorage:', err)
-    }
   }, [history])
 
   useEffect(() => {
     expiredRef.current = expired
-    try {
-      localStorage.setItem(EXPIRED_STORAGE_KEY, JSON.stringify(expired))
-    } catch (err) {
-      console.error('❌ Error saving expired to localStorage:', err)
-    }
   }, [expired])
 
+  useEffect(clearLegacyStorage, [])
+
+  // Load the signed-in user's rows. Re-runs when the account changes so a logout
+  // (or a login as someone else) never leaves the previous user's list on screen.
+  const userKey = user?.email || null
   useEffect(() => {
+    if (!userKey) {
+      setHistory([])
+      setExpired([])
+      return
+    }
+
     let cancelled = false
     const sync = async () => {
       try {
         const all = await fetchDownloads(HISTORY_API_URL)
         if (cancelled) return
 
-        const sortByDate = (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-        // `active` and `movedFromServer` both feed the combined setHistory sort
-        // below, so they don't need their own sort; only expiredFromServer feeds
-        // setExpired directly and must be pre-sorted.
-        const active = all.filter((d) => !d.expired && !d.moved).map(decorate)
-        // A "moved to cloud" file keeps its metadata row server-side (source URL
-        // + cloud link) even though the media is gone, so it comes back from the
-        // server as a moved row — surfaced as a "Moved" card, not expired.
-        const movedFromServer = all.filter((d) => d.moved)
-        const expiredFromServer = all.filter((d) => d.expired && !d.moved).sort(sortByDate)
-
-        // Any local moved rows the server no longer knows about (moved before we
-        // persisted them server-side) still live on so their link isn't lost.
-        const serverIds = new Set(all.map((d) => d.downloadId))
-        const localRows = loadKey(HISTORY_STORAGE_KEY)
-        const preservedMoved = localRows.filter((d) => d.moved && !serverIds.has(d.downloadId))
-        // Pending/failed rows are written client-side at click time and aren't on
-        // the server yet, so a reload mid-download would otherwise wipe them.
-        // Keep the ones the server doesn't know about; a completed one reappears
-        // in `active` (its id is in serverIds) and supersedes the placeholder.
-        const preservedPending = localRows.filter(
-          (d) =>
-            (d.status === 'downloading' || d.status === 'failed') && !serverIds.has(d.downloadId),
-        )
-
+        // Everything that isn't expired stays in the active list — including the
+        // `downloading` and `failed` rows the Downloads page renders as their own
+        // cards. Those are server-side now (POST /api/download records the
+        // download before starting it), so they survive a reload without any
+        // client-side preservation. A "moved to cloud" row keeps its source URL +
+        // cloud link even though the media is gone, so it also stays active (as a
+        // "Moved" card) rather than being listed as expired.
         setHistory(
-          [...active, ...movedFromServer, ...preservedMoved, ...preservedPending].sort(sortByDate),
+          all
+            .filter((d) => d.moved || !d.expired)
+            .map(decorate)
+            .sort(byNewest),
         )
-        setExpired(expiredFromServer)
+        setExpired(
+          all
+            .filter((d) => d.expired && !d.moved)
+            .map(decorate)
+            .sort(byNewest),
+        )
       } catch (err) {
         console.error('❌ Server sync error:', err)
       }
@@ -105,7 +108,7 @@ export function HistoryProvider({ children }) {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [userKey])
 
   const addDownload = useCallback((download) => {
     const decorated = decorate(download)
@@ -116,12 +119,11 @@ export function HistoryProvider({ children }) {
     if (decorated.url) {
       // A completed re-download supersedes any older expired row for the same
       // source URL. Compute that stale set once, then (a) best-effort hard-delete
-      // it server-side via the existing permanent-delete endpoint so the
-      // mount-time sync() won't resurrect it on reload, and (b) drop it locally.
-      // The delete is fire-and-forget, so a failed request can still let the row
-      // reappear on the next sync. The downloadId guard keeps us from deleting the
-      // freshly-completed row itself. Moved-to-cloud rows live in `history`, not
-      // `expired`, so they are left untouched.
+      // it server-side so the next sync won't resurrect it, and (b) drop it
+      // locally. The delete is fire-and-forget, so a failed request can still let
+      // the row reappear on the next sync. The downloadId guard keeps us from
+      // deleting the freshly-completed row itself. Moved-to-cloud rows live in
+      // `history`, not `expired`, so they are left untouched.
       const stale = expiredRef.current.filter(
         (d) => d.url === decorated.url && d.downloadId !== decorated.downloadId,
       )
@@ -131,11 +133,12 @@ export function HistoryProvider({ children }) {
     }
   }, [])
 
-  // Write a placeholder row the moment a download starts (before the SSE runs),
-  // so it shows up in the Downloads list immediately and survives in-session
-  // navigation. Deduped by downloadId, prepended; a later addDownload on
-  // completion replaces the whole record (dropping the status) so it upgrades
-  // to a normal completed card. Not decorated — it has no filename yet.
+  // Show a "Downloading…" row the moment a download starts. The server already
+  // recorded it (POST /api/download writes the row before starting the job); this
+  // just avoids waiting for a re-sync to see it. Deduped by downloadId,
+  // prepended; a later addDownload on completion replaces the whole record
+  // (dropping the status) so it upgrades to a normal completed card. Not
+  // decorated — it has no filename yet.
   const startPending = useCallback((row) => {
     setHistory((prev) => {
       const without = prev.filter((d) => d.downloadId !== row.downloadId)
@@ -143,11 +146,10 @@ export function HistoryProvider({ children }) {
     })
   }, [])
 
-  // Flip a pending row to "failed" when the SSE errors. Updates in place if the
+  // Flip a pending row to "failed" when the SSE errors (the server marks its own
+  // row failed through the job's terminal hook). Updates in place if the
   // placeholder is present (the common path); otherwise inserts a failed row
   // from whatever start fields the caller has, so the failure is never silent.
-  // The insert carries createdAt so it sorts alongside the other rows (the
-  // in-place path already has one from startPending).
   const markFailed = useCallback((downloadId, fallback = {}) => {
     setHistory((prev) => {
       if (prev.some((d) => d.downloadId === downloadId)) {
@@ -163,17 +165,23 @@ export function HistoryProvider({ children }) {
     })
   }, [])
 
-  // Drop a pending/failed row locally only — no server DELETE and no move to the
-  // expired list, since its file may never have landed server-side. The history
-  // effect persists the removal to localStorage.
-  const dropLocal = useCallback((downloadId) => {
+  // Permanently forget a download — the one "get rid of this row for good" path,
+  // shared by the failed, expired and moved cards. All three hold a row that
+  // exists server-side (and would come back on the next sync), and none has media
+  // worth keeping or re-expiring: a failed download never landed, an expired one
+  // already lost its files, and a moved one lives in the visitor's cloud now. So
+  // hard-delete server-side first, then drop the id from both lists (it only ever
+  // lives in one, so the other filter is a no-op).
+  const forgetDownload = useCallback(async (downloadId) => {
+    await forgetOnServer(downloadId)
     setHistory((prev) => prev.filter((d) => d.downloadId !== downloadId))
+    setExpired((prev) => prev.filter((d) => d.downloadId !== downloadId))
   }, [])
 
-  // Cancel an in-flight download: since the job now runs server-side regardless
-  // of the client connection, a running download must be explicitly stopped.
-  // DELETE aborts the job and removes its partial files; then drop the row
-  // locally (fire-and-forget — the row goes either way).
+  // Cancel an in-flight download: the job runs server-side regardless of the
+  // client, so it must be explicitly stopped. DELETE aborts the job, removes its
+  // partial files and drops its history row; then drop the row locally
+  // (fire-and-forget — the row goes either way).
   const cancelDownload = useCallback(async (downloadId) => {
     try {
       await apiFetch(`${HISTORY_API_URL}/api/download/${downloadId}`, { method: 'DELETE' })
@@ -195,14 +203,9 @@ export function HistoryProvider({ children }) {
       setExpired((prev) => {
         const without = prev.filter((d) => d.downloadId !== downloadId)
         const entry = { ...removed, expired: true, expiredAt: new Date().toISOString() }
-        return [entry, ...without].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        return [entry, ...without].sort(byNewest)
       })
     }
-  }, [])
-
-  const forgetExpired = useCallback(async (downloadId) => {
-    await forgetOnServer(downloadId)
-    setExpired((prev) => prev.filter((d) => d.downloadId !== downloadId))
   }, [])
 
   const setKept = useCallback(async (downloadId, kept) => {
@@ -226,23 +229,14 @@ export function HistoryProvider({ children }) {
     return historyRef.current.find((d) => d.downloadId === downloadId) || null
   }, [])
 
-  // Flag a download as moved to the visitor's cloud. The server keeps the
-  // metadata row (source URL + cloud link) but drops the media, so we only
-  // update local state: the row stays visible as a "Moved" card with an
-  // "Open in <provider>" link.
+  // Flag a download as moved to the visitor's cloud. The server flags its own row
+  // when the upload job finishes (keeping the source URL + cloud link, dropping
+  // the media), so we only mirror that locally: the row stays visible as a
+  // "Moved" card with an "Open in <provider>" link.
   const markMoved = useCallback((downloadId, info) => {
     setHistory((prev) =>
       prev.map((d) => (d.downloadId === downloadId ? { ...d, moved: info || {} } : d)),
     )
-    setExpired((prev) => prev.filter((d) => d.downloadId !== downloadId))
-  }, [])
-
-  // Permanently forget a moved download. The server still holds its metadata row
-  // (source URL + cloud link), so hard-delete it there before dropping it from
-  // local state — otherwise it would reappear on the next sync.
-  const forgetMoved = useCallback(async (downloadId) => {
-    await forgetOnServer(downloadId)
-    setHistory((prev) => prev.filter((d) => d.downloadId !== downloadId))
     setExpired((prev) => prev.filter((d) => d.downloadId !== downloadId))
   }, [])
 
@@ -254,14 +248,12 @@ export function HistoryProvider({ children }) {
       addDownload,
       startPending,
       markFailed,
-      dropLocal,
+      forgetDownload,
       cancelDownload,
       removeDownload,
-      forgetExpired,
       setKept,
       findById,
       markMoved,
-      forgetMoved,
     }),
     [
       history,
@@ -269,14 +261,12 @@ export function HistoryProvider({ children }) {
       addDownload,
       startPending,
       markFailed,
-      dropLocal,
+      forgetDownload,
       cancelDownload,
       removeDownload,
-      forgetExpired,
       setKept,
       findById,
       markMoved,
-      forgetMoved,
     ],
   )
 

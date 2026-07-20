@@ -12,10 +12,11 @@ tubekeep/
 │   │   ├── routes/        # API endpoints
 │   │   │   ├── info.js         # Video info endpoint
 │   │   │   ├── download.js     # Download endpoint
-│   │   │   ├── disk.js         # Server disk-usage endpoint
-│   │   │   └── files.js        # File serving endpoints
+│   │   │   ├── disk.js         # Disk usage + the caller's storage quota
+│   │   │   └── files.js        # Per-user download list + file serving
 │   │   ├── services/      # Business logic
 │   │   │   ├── ytdlp.js        # yt-dlp wrapper
+│   │   │   ├── downloadsStore.js # Per-user history (Postgres `downloads` table)
 │   │   │   └── cleanup.js      # Auto-cleanup service
 │   │   └── utils/         # Utilities
 │   │       └── storage.js      # File management
@@ -28,7 +29,7 @@ tubekeep/
 │           ├── FormatSelector.jsx
 │           ├── ProgressBar.jsx
 │           ├── VideoPlayer.jsx
-│           └── DownloadHistory.jsx
+│           └── ProtectedRoute.jsx  # login gate
 └── start.sh               # Convenience startup script
 ```
 
@@ -57,8 +58,9 @@ tubekeep/
 - **High Quality Support**: Automatically merges high-res video with audio
 - **Real-time Progress**: Watch download progress with Server-Sent Events (SSE)
 - **In-browser Player**: Stream videos directly in the browser
-- **Download History**: View, play, and manage previous downloads
-- **Auto-cleanup**: Files automatically deleted after 24 hours
+- **Download History**: View, play, and manage previous downloads — stored per-user in Postgres, so it follows your account across devices
+- **Per-user Storage Quota**: Each account has a `max_storage_bytes` allowance (default 5 GB, `-1` = unlimited) enforced before a download starts
+- **Auto-cleanup**: Files automatically expired 1 hour after download (`MAX_FILE_AGE_HOURS`)
 - **Unicode Support**: Handles filenames with special characters (Arabic, Persian, etc.)
 - **Responsive Design**: Works on desktop and mobile devices
 
@@ -175,11 +177,12 @@ VITE_API_URL=http://localhost:3001
 
 ### Download Cleanup
 
-Files are automatically deleted after **24 hours**. To adjust:
+Media files are automatically *expired* after **1 hour** (the history row survives,
+so the download can be repeated; it stops counting against your quota). To adjust:
 
 Edit `backend/src/services/cleanup.js`:
 ```javascript
-const MAX_FILE_AGE_HOURS = 24;  // Change to desired hours
+const MAX_FILE_AGE_HOURS = 1;  // Change to desired hours
 ```
 
 ## API Endpoints
@@ -206,10 +209,14 @@ Content-Type: application/json
 }
 ```
 Mints a `downloadId` **and starts the download server-side** — it runs to
-completion regardless of any client connection. Over the concurrency cap
-(`MAX_CONCURRENT_DOWNLOADS`, default 3) it returns **HTTP 429**; if the optional
-`filesize` (the selected format's bytes) fails the disk-space margin it returns
-**HTTP 507** — both before any download starts.
+completion regardless of any client connection. The optional `filesize` (the
+selected format's bytes) is checked against two independent limits, both
+returning **HTTP 507**: your account's storage quota (`users.max_storage_bytes`)
+and the server's free disk margin. Over the concurrency cap
+(`MAX_CONCURRENT_DOWNLOADS`, default 3) it returns **HTTP 429**. All three run
+before any download starts. On success the download is recorded in the
+`downloads` table under your user as `status: 'downloading'`, so it survives a
+page reload, and is flipped to `complete`/`failed` when the job ends.
 
 ### Download Progress (SSE)
 ```
@@ -224,21 +231,24 @@ An unknown id yields a `"download not found"` error.
 ```
 DELETE /api/download/:downloadId
 ```
-Aborts a running download job and removes its partial files.
+Aborts a running download job, removes its partial files, and drops its history
+row (scoped to your own downloads).
 
-### Server Disk Usage
+### Storage Usage
 ```
 GET /api/disk
 ```
 Returns `{ total, free, used }` (bytes) for the filesystem holding the downloads
-directory, plus the fit knobs (`sizeMultiplier`, `headroomBytes`) the format
-screen uses to disable formats that wouldn't fit.
+directory, the fit knobs (`sizeMultiplier`, `headroomBytes`), and
+`quota: { used, max, remaining }` for the signed-in user (`max`/`remaining` of
+`-1` = unlimited). The format screen uses these to show the storage banner and
+disable formats that either limit would reject.
 
 ### List Downloads
 ```
 GET /api/files
 ```
-Returns all active downloads on the server.
+Returns **your** downloads, read from the `downloads` table (requires a session).
 
 ### Stream/Download File
 ```
@@ -249,8 +259,12 @@ GET /api/files/:downloadId/:filename?action=download
 
 ### Delete Download
 ```
-DELETE /api/files/:downloadId
+DELETE /api/files/:downloadId[?permanent=true]
 ```
+Default *expires* the download (media removed, row kept so it can be
+re-downloaded); `?permanent=true` deletes the row and directory outright. Both
+are scoped to your own downloads — another user's id reads as `404` — and both
+free the bytes from your quota.
 
 ## Usage Guide
 
@@ -317,10 +331,15 @@ pip install yt-dlp
 - Ensure backend and frontend are running on correct ports
 - Check CORS configuration in `backend/src/server.js`
 
-### History lost on refresh
-- Check browser's localStorage is enabled
-- Look for console errors about localStorage access
-- Try in a different browser/incognito mode
+### History looks empty or out of date
+- History lives in Postgres, scoped to your account — make sure you're logged in as the right user
+- Confirm `DATABASE_URL` is set and the schema is applied (`cd backend && npm run db:init`)
+- Look for `❌ Server sync error` in the browser console, or a 401 (expired session — log in again)
+
+### "Not enough storage in your account" when starting a download
+- You've hit your per-user quota (`users.max_storage_bytes`, default 5 GB). Delete
+  or move some downloads to free space, or raise the value on your `users` row in
+  the Neon dashboard (`-1` = unlimited)
 
 ## Development
 
@@ -345,15 +364,17 @@ npm run build  # Creates dist/ folder
 ## Security Considerations
 
 - Downloads are stored temporarily and auto-deleted
+- Download history is per-user: every list/expire/delete/keep query is scoped to the session's `user_id`, so one account can't read or remove another's downloads
 - CORS is pinned to `FRONTEND_URL` with credentials enabled (never a wildcard)
 - Helmet provides security headers but CSP is disabled for video streaming
 - Authentication is an emailed single-use magic link → JWT httpOnly cookie session. Users are a closed, hand-managed set in the Neon `users` table (no public signup). All API routes require a session except the public `GET /api/files/:id/:filename` media route (so share links work)
 
 ## Contributing
 
-Auth, the database layer, and the login UI now exist (magic-link login, Neon Postgres, a gated React SPA). Still on the roadmap for full multi-user support:
-1. Move download history to Postgres and associate downloads with user IDs
-2. Enforce the per-user storage quota (`users.max_storage_bytes`)
+Multi-user support is in place: magic-link login, Neon Postgres, a gated React SPA,
+per-user download history in the `downloads` table, and the per-user storage quota
+(`users.max_storage_bytes`, `-1` = unlimited) enforced alongside the global free-disk
+guard.
 
 ## License
 

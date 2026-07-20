@@ -2,12 +2,13 @@ const express = require('express');
 const path = require('node:path');
 const fs = require('node:fs');
 const {
-  listDownloads,
+  isValidDownloadId,
   getDownloadFilePath,
   deleteDownload,
   expireDownload,
   setKept,
 } = require('../utils/storage');
+const { cancelJob } = require('../services/downloadManager');
 
 // RFC 5987 encoding for unicode filenames in Content-Disposition header
 function encodeRFC5987(filename) {
@@ -28,10 +29,10 @@ function getContentDisposition(filename, isDownload) {
   return `${dispositionType}; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`;
 }
 
-// Build the files router. `requireAuth` is injected (built once in server.js
-// from the single shared store) so the auth wiring is consistent with the other
-// routers and unit-testable without Postgres.
-function createFilesRouter(requireAuth) {
+// Build the files router. `requireAuth` and the per-user history `store` are
+// injected (both built once in server.js over the shared pg pool) so the auth
+// wiring is consistent with the other routers and unit-testable without Postgres.
+function createFilesRouter(requireAuth, { store }) {
   const router = express.Router();
 
   // PUBLIC: byte-range media serving. Declared FIRST, above the requireAuth choke
@@ -145,70 +146,82 @@ function createFilesRouter(requireAuth) {
   // auth-gated automatically, and only the public serve route above is exempt.
   router.use(requireAuth);
 
-  // The download LIST is private — it reflects the server's stored downloads.
-  router.get('/', (_req, res) => {
+  const notFound = (res) => res.status(404).json({ success: false, error: 'Download not found' });
+
+  // The download LIST is private and per-user: it comes from the `downloads`
+  // table scoped to the session's user, not from a scan of the downloads
+  // directory, so one user never sees another's history.
+  router.get('/', async (req, res) => {
     try {
-      const downloads = listDownloads();
-      res.json({
-        success: true,
-        data: downloads,
-      });
+      res.json({ success: true, data: await store.listByUser(req.user.user_id) });
     } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: error.message,
-      });
+      console.error('❌ Download list error:', error.message);
+      res.status(500).json({ success: false, error: 'Failed to load your downloads' });
     }
   });
 
-  router.patch('/:downloadId', (req, res) => {
+  // Toggle "keep forever". The DB row is the source of truth for the UI, but the
+  // on-disk metadata is updated too because the age-based cleanup sweep reads
+  // `kept` from there when deciding what to expire.
+  router.patch('/:downloadId', async (req, res) => {
     const { downloadId } = req.params;
     const kept = req.query.kept === 'true';
+    if (!isValidDownloadId(downloadId)) return notFound(res);
 
     try {
-      const ok = setKept(downloadId, kept);
-      if (ok) {
-        res.json({
-          success: true,
-          data: { downloadId, kept },
-        });
-      } else {
-        res.status(404).json({
-          success: false,
-          error: 'Download not found',
-        });
-      }
+      const ok = await store.setKeptForUser(downloadId, req.user.user_id, kept);
+      if (!ok) return notFound(res);
+      setKept(downloadId, kept);
+      res.json({ success: true, data: { downloadId, kept } });
     } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: error.message,
-      });
+      console.error('❌ Keep toggle error:', error.message);
+      res.status(500).json({ success: false, error: 'Failed to update the download' });
     }
   });
 
-  router.delete('/:downloadId', (req, res) => {
+  // Two-tier destroy, both scoped to the caller's own rows (the ownership check
+  // IS the store's WHERE user_id, so another user's id reads as "not found"):
+  //   default          → expire: drop the media, keep the row (re-downloadable).
+  //                      Complete downloads only — see expireForUser.
+  //   ?permanent=true  → delete: drop the media AND the row, stopping the job
+  //                      first if one is still running.
+  // Either way the freed bytes stop counting toward the user's quota.
+  router.delete('/:downloadId', async (req, res) => {
     const { downloadId } = req.params;
     const permanent = req.query.permanent === 'true';
+    if (!isValidDownloadId(downloadId)) return notFound(res);
 
+    let ok;
     try {
-      const ok = permanent ? deleteDownload(downloadId) : expireDownload(downloadId);
-      if (ok) {
-        res.json({
-          success: true,
-          message: permanent ? 'Download deleted permanently' : 'Download expired',
-        });
+      ok = permanent
+        ? await store.deleteForUser(downloadId, req.user.user_id)
+        : await store.expireForUser(downloadId, req.user.user_id);
+    } catch (error) {
+      console.error('❌ Download delete error:', error.message);
+      return res.status(500).json({ success: false, error: 'Failed to remove the download' });
+    }
+    if (!ok) return notFound(res);
+
+    // Past this point the row has already changed and the caller's intent is
+    // recorded, so a filesystem failure is logged rather than reported as a
+    // failed request — the hourly sweep reconciles whatever is left on disk.
+    try {
+      if (permanent) {
+        // The row is gone, so nothing would ever point at a still-running job's
+        // output. Stop it before removing the directory.
+        cancelJob(downloadId);
+        deleteDownload(downloadId);
       } else {
-        res.status(404).json({
-          success: false,
-          error: 'Download not found',
-        });
+        expireDownload(downloadId);
       }
     } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: error.message,
-      });
+      console.error(`⚠️  Media cleanup failed for ${downloadId}: ${error.message}`);
     }
+
+    res.json({
+      success: true,
+      message: permanent ? 'Download deleted permanently' : 'Download expired',
+    });
   });
 
   return router;

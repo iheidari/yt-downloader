@@ -15,12 +15,13 @@ const path = require('node:path');
 const fs = require('node:fs');
 
 const infoRoutes = require('./routes/info');
-const downloadRoutes = require('./routes/download');
+const { createDownloadRouter } = require('./routes/download');
 const { createFilesRouter } = require('./routes/files');
-const cloudRoutes = require('./routes/cloud');
-const diskRoutes = require('./routes/disk');
+const { createCloudRouter } = require('./routes/cloud');
+const { createDiskRouter } = require('./routes/disk');
 const { createAuthRouter } = require('./routes/auth');
 const { createStore } = require('./services/authStore');
+const { createStore: createDownloadsStore } = require('./services/downloadsStore');
 const { createRequireAuth } = require('./middleware/requireAuth');
 const mailer = require('./services/mailer');
 const { query } = require('./db');
@@ -132,6 +133,11 @@ app.use('/api', (_req, res, next) => {
 const store = createStore(query);
 const requireAuth = createRequireAuth(store);
 
+// Per-user download history + storage quota. Injected into the routers below and
+// into the background workers (hourly cleanup sweep, cloud-move job) that run
+// outside any request — one store, handed down explicitly.
+const downloadsStore = createDownloadsStore(query);
+
 // Auth endpoints are public (they establish the session). The magic-link
 // request route is rate-limited inside the router; the store + mailer are
 // injected so the same router is unit-testable without Postgres/Resend.
@@ -144,12 +150,27 @@ app.use('/api/auth', createAuthRouter({ store, mailer }));
 // Throttle the endpoints that each shell out to yt-dlp. Generous limits: this
 // is a personal app, so the goal is only to cap runaway abuse, not normal use.
 app.use('/api/info', rateLimit({ windowMs: 60_000, max: 30 }), requireAuth, infoRoutes);
-app.use('/api/download', rateLimit({ windowMs: 60_000, max: 40 }), requireAuth, downloadRoutes);
-app.use('/api/files', createFilesRouter(requireAuth));
-app.use('/api/disk', rateLimit({ windowMs: 60_000, max: 60 }), requireAuth, diskRoutes);
+app.use(
+  '/api/download',
+  rateLimit({ windowMs: 60_000, max: 40 }),
+  requireAuth,
+  createDownloadRouter({ store: downloadsStore }),
+);
+app.use('/api/files', createFilesRouter(requireAuth, { store: downloadsStore }));
+app.use(
+  '/api/disk',
+  rateLimit({ windowMs: 60_000, max: 60 }),
+  requireAuth,
+  createDiskRouter({ store: downloadsStore }),
+);
 // OAuth exchange + upload kick-off talk to a provider; throttle per-IP. The SSE
 // progress stream shares this generous window (60/min absorbs reconnects).
-app.use('/api/cloud', rateLimit({ windowMs: 60_000, max: 60 }), requireAuth, cloudRoutes);
+app.use(
+  '/api/cloud',
+  rateLimit({ windowMs: 60_000, max: 60 }),
+  requireAuth,
+  createCloudRouter({ store: downloadsStore }),
+);
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -172,7 +193,7 @@ app.use((err, _req, res, _next) => {
   });
 });
 
-startCleanupScheduler();
+startCleanupScheduler({ store: downloadsStore });
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);

@@ -71,10 +71,11 @@ export async function fetchDownloads(apiUrl) {
   return data.data
 }
 
-// Server disk usage for the format-screen banner + fit check. Returns null on
-// any failure so the UI degrades to "no banner, nothing blocked" rather than
+// Storage state for the format-screen banner + fit checks. Returns null on any
+// failure so the UI degrades to "no banner, nothing blocked" rather than
 // breaking the format list. Shape: { total, free, used, sizeMultiplier,
-// headroomBytes } (bytes + the fit knobs the backend owns).
+// headroomBytes, quota: { used, max, remaining } } — the server's disk plus this
+// user's allowance, with the fit knobs the backend owns.
 export async function fetchDisk(apiUrl) {
   try {
     const res = await apiFetch(`${apiUrl}/api/disk`)
@@ -94,6 +95,36 @@ export function hasRoomFor(filesize, disk) {
   if (!filesize || filesize <= 0) return true
   if (!disk) return true
   return disk.free >= filesize * disk.sizeMultiplier + disk.headroomBytes
+}
+
+// A quota `max`/`remaining` of -1 means "no cap" (the `users.max_storage_bytes`
+// sentinel; see the backend's UNLIMITED_QUOTA).
+export function isUnlimitedQuota(max) {
+  return !Number.isFinite(Number(max)) || Number(max) < 0
+}
+
+// Whether a download of `filesize` bytes fits in the user's remaining storage
+// quota. No multiplier or headroom — the quota counts what a download keeps, not
+// its transient merge footprint. This consumes `quota.remaining` rather than
+// re-deriving it from used/max: the backend's remainingQuota() already encodes
+// both the subtraction and the clamp-at-zero, so there is one definition of "how
+// much is left" and the two sides can't drift. Unknown size, unlimited quota, or
+// no quota info yet is never blocked.
+export function hasQuotaFor(filesize, disk) {
+  if (!filesize || filesize <= 0) return true
+  if (!disk?.quota) return true
+  // Covers both the -1 sentinel and a missing/garbled value (fail open).
+  if (isUnlimitedQuota(disk.quota.remaining)) return true
+  return filesize <= Number(disk.quota.remaining)
+}
+
+// The single "can this format be downloaded?" answer, combining both guards the
+// backend enforces at POST /api/download. Returns null when it fits, or a short
+// reason to show under the disabled option.
+export function downloadBlockReason(filesize, disk) {
+  if (!hasQuotaFor(filesize, disk)) return 'Over your storage quota'
+  if (!hasRoomFor(filesize, disk)) return 'Not enough space'
+  return null
 }
 
 export function formatFileSize(bytes) {

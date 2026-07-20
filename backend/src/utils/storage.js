@@ -176,6 +176,33 @@ function hasRoomFor(free, filesize) {
   return free >= requiredBytesFor(filesize);
 }
 
+// Sentinel `max_storage_bytes` meaning "no cap" (see schema.sql / CLAUDE.md).
+const UNLIMITED_QUOTA = -1;
+
+function isUnlimitedQuota(max) {
+  const n = Number(max);
+  return !Number.isFinite(n) || n < 0;
+}
+
+// Bytes a user has left before hitting their quota, or UNLIMITED_QUOTA when they
+// have no cap. Never negative — an over-quota user reads as 0 remaining.
+function remainingQuota(used, max) {
+  if (isUnlimitedQuota(max)) return UNLIMITED_QUOTA;
+  return Math.max(0, Number(max) - Number(used || 0));
+}
+
+// Per-user quota guard, the companion to hasRoomFor: `used` + `filesize` must
+// stay within `max`. Unlike the disk guard there's no multiplier/headroom —
+// the quota counts what a download will actually keep, not its transient merge
+// footprint. Unlimited quota and unknown/zero size are always allowed (the
+// latter mirrors hasRoomFor, so an unsized format is never blocked). Shared with
+// the frontend via the quota block in the /api/disk response, so there's no drift.
+function hasQuotaFor(used, max, filesize) {
+  if (isUnlimitedQuota(max)) return true;
+  if (!filesize || filesize <= 0) return true;
+  return Number(used || 0) + Number(filesize) <= Number(max);
+}
+
 function setKept(downloadId, kept) {
   const metadata = getDownloadMetadata(downloadId);
   if (!metadata) return false;
@@ -219,7 +246,46 @@ function markMoved(downloadId, moveInfo) {
   });
 }
 
-function cleanupOldDownloads(maxAgeHours = 24) {
+// `downloads` defaults to a fresh scan; callers that already hold a listing pass
+// it in so one sweep doesn't walk the downloads directory twice.
+// Remove download directories that carry no metadata.json and haven't been
+// touched in `maxAgeMs`. Such a directory is debris, not a download: metadata is
+// written on completion, so anything without it either died mid-flight or was
+// recreated by a yt-dlp process still flushing after its abort was requested
+// (the cancel route removes the directory synchronously, but the subprocess
+// exits asynchronously). listDownloads skips these, so the age-based sweep can
+// never reach them and they would sit on disk forever.
+//
+// `maxAgeMs` must stay well past the longest plausible download: a directory's
+// mtime only changes when an entry is added or removed, so a slow single-file
+// download can look untouched the whole time it is running. Callers pass the
+// same window used to declare an in-flight download stranded.
+function cleanupOrphanDirs(maxAgeMs = 6 * 60 * 60 * 1000) {
+  let entries;
+  try {
+    entries = fs.readdirSync(downloadsDir, { withFileTypes: true });
+  } catch {
+    return { removed: 0, removedIds: [] };
+  }
+
+  const cutoff = Date.now() - maxAgeMs;
+  const removedIds = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !isValidDownloadId(entry.name)) continue;
+    const dirPath = path.join(downloadsDir, entry.name);
+    try {
+      if (fs.existsSync(path.join(dirPath, METADATA_FILE))) continue;
+      if (fs.statSync(dirPath).mtimeMs >= cutoff) continue;
+      fs.rmSync(dirPath, { recursive: true, force: true });
+      removedIds.push(entry.name);
+    } catch (err) {
+      console.error(`⚠️  Could not remove orphan dir ${entry.name}: ${err.message}`);
+    }
+  }
+  return { removed: removedIds.length, removedIds };
+}
+
+function cleanupOldDownloads(maxAgeHours = 24, downloads = listDownloads()) {
   const now = Date.now();
   const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
   const expiredIds = [];
@@ -228,7 +294,7 @@ function cleanupOldDownloads(maxAgeHours = 24) {
   // Reuse the single directory scanner. `expired` (no media files) and `kept`
   // downloads are already surfaced by listDownloads, so this only applies the
   // age predicate — no separate filesystem walk to keep in sync.
-  for (const download of listDownloads()) {
+  for (const download of downloads) {
     if (download.expired || download.kept) continue;
 
     try {
@@ -253,6 +319,10 @@ module.exports = {
   getDiskUsage,
   hasRoomFor,
   requiredBytesFor,
+  UNLIMITED_QUOTA,
+  isUnlimitedQuota,
+  remainingQuota,
+  hasQuotaFor,
   isValidDownloadId,
   saveDownloadMetadata,
   getDownloadMetadata,
@@ -265,4 +335,5 @@ module.exports = {
   markMoved,
   setKept,
   cleanupOldDownloads,
+  cleanupOrphanDirs,
 };
