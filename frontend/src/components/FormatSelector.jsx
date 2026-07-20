@@ -138,7 +138,9 @@ function FormatSelector({ info, onDownload, startingFormat = null, disk = null }
             {info.uploader ? (
               <div className="flex items-center gap-2.5">
                 <div className="w-[34px] h-[34px] rounded-full bg-line flex items-center justify-center text-muted">
-                  <span className="material-symbols-outlined text-[22px]">person</span>
+                  <span className="material-symbols-outlined text-[22px]" aria-hidden="true">
+                    person
+                  </span>
                 </div>
                 <div>
                   <p className="font-semibold text-[13.5px] text-ink leading-tight">
@@ -163,6 +165,7 @@ function FormatSelector({ info, onDownload, startingFormat = null, disk = null }
         <span
           className="material-symbols-outlined text-ink text-[22px]"
           style={{ fontVariationSettings: "'FILL' 1, 'wght' 500" }}
+          aria-hidden="true"
         >
           push_pin
         </span>
@@ -194,7 +197,9 @@ function FormatSelector({ info, onDownload, startingFormat = null, disk = null }
             <span className="material-symbols-outlined text-ink text-[20px]" aria-hidden="true">
               hard_drive
             </span>
-            <p className="font-semibold text-[13.5px] text-ink">Your storage</p>
+            <p id="quota-label" className="font-semibold text-[13.5px] text-ink">
+              Your storage
+            </p>
             <p className="ml-auto text-[12.5px] text-muted">
               {unlimited ? (
                 <>{formatFileSize(quota.used)} used · unlimited</>
@@ -207,7 +212,22 @@ function FormatSelector({ info, onDownload, startingFormat = null, disk = null }
             </p>
           </div>
           {unlimited ? null : (
-            <div className="h-1.5 w-full rounded-full bg-line2 overflow-hidden">
+            <div
+              // A gauge, not a bare bar: without a role + value the fill is
+              // invisible to assistive tech (its meaning is carried by width
+              // and colour alone). progressbar is used over meter for screen
+              // reader support; aria-valuetext restates the bytes so the
+              // percentage isn't the only thing announced.
+              role="progressbar"
+              aria-labelledby="quota-label"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={usedPct}
+              aria-valuetext={`${usedPct}% used — ${formatFileSize(quota.used)} of ${formatFileSize(
+                quota.max,
+              )}, ${formatFileSize(quota.remaining)} left`}
+              className="h-1.5 w-full rounded-full bg-line2 overflow-hidden"
+            >
               <div
                 className={`h-full rounded-full ${usedPct >= 90 ? 'bg-pop' : 'bg-fill'}`}
                 style={{ width: `${usedPct}%` }}
@@ -222,7 +242,9 @@ function FormatSelector({ info, onDownload, startingFormat = null, disk = null }
         {/* Video Options */}
         <section>
           <div className="flex items-center gap-2 mb-3">
-            <span className="material-symbols-outlined text-ink text-[20px]">movie</span>
+            <span className="material-symbols-outlined text-ink text-[20px]" aria-hidden="true">
+              movie
+            </span>
             <h3 className="font-bold text-[16px] text-ink">Video</h3>
           </div>
           {videoOptions.length === 0 ? (
@@ -234,6 +256,7 @@ function FormatSelector({ info, onDownload, startingFormat = null, disk = null }
                 const isStarting = startingFormat === format.formatId
                 const isBest = idx === 0
                 const blocked = downloadBlockReason(format.filesize, disk)
+                const inactive = startingFormat !== null || blocked !== null
                 return (
                   <div
                     key={format.formatId}
@@ -267,18 +290,27 @@ function FormatSelector({ info, onDownload, startingFormat = null, disk = null }
                     </div>
                     <button
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        // aria-disabled, not disabled: a `disabled` button is
+                        // skipped by the tab order, so its aria-describedby
+                        // reason never reaches screen reader users (and focus
+                        // would be dropped mid-flow when a click disables it).
+                        // Guard the action here instead.
+                        if (inactive) return
                         onDownload(format.formatId, format._type, keep, format.filesize)
-                      }
-                      disabled={startingFormat !== null || blocked !== null}
+                      }}
+                      aria-disabled={inactive}
                       aria-describedby={blocked ? noSpaceId(format.formatId) : undefined}
-                      className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-[9px] font-semibold text-[12.5px] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex-shrink-0 ${
+                      className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-[9px] font-semibold text-[12.5px] transition-all flex-shrink-0 ${
+                        inactive ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'
+                      } ${
                         isBest
                           ? 'bg-fill text-on-fill'
                           : 'bg-surface text-ink border border-line2 hover:bg-tint'
                       }`}
                     >
                       <span
+                        aria-hidden="true"
                         className={`material-symbols-outlined text-[16px] ${
                           isStarting ? 'animate-spin' : ''
                         }`}
@@ -297,7 +329,9 @@ function FormatSelector({ info, onDownload, startingFormat = null, disk = null }
         {/* Audio Only */}
         <section>
           <div className="flex items-center gap-2 mb-3">
-            <span className="material-symbols-outlined text-ink text-[20px]">graphic_eq</span>
+            <span className="material-symbols-outlined text-ink text-[20px]" aria-hidden="true">
+              graphic_eq
+            </span>
             <h3 className="font-bold text-[16px] text-ink">Audio</h3>
           </div>
           {audioOptions.length === 0 ? (
@@ -309,6 +343,7 @@ function FormatSelector({ info, onDownload, startingFormat = null, disk = null }
                 const isBest = idx === 0
                 const abr = Math.round(format.abr || 0)
                 const blocked = downloadBlockReason(format.filesize, disk)
+                const inactive = startingFormat !== null || blocked !== null
                 return (
                   <div
                     key={format.formatId}
@@ -342,12 +377,20 @@ function FormatSelector({ info, onDownload, startingFormat = null, disk = null }
                     </div>
                     <button
                       type="button"
-                      onClick={() => onDownload(format.formatId, 'audio', keep, format.filesize)}
-                      disabled={startingFormat !== null || blocked !== null}
+                      onClick={() => {
+                        // See the video button above: aria-disabled keeps the
+                        // control focusable so its reason is announced.
+                        if (inactive) return
+                        onDownload(format.formatId, 'audio', keep, format.filesize)
+                      }}
+                      aria-disabled={inactive}
                       aria-describedby={blocked ? noSpaceId(format.formatId) : undefined}
-                      className="flex items-center gap-1.5 bg-surface text-ink border border-ink px-3.5 py-2.5 rounded-[9px] font-semibold text-[12.5px] hover:bg-tint active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex-shrink-0"
+                      className={`flex items-center gap-1.5 bg-surface text-ink border border-ink px-3.5 py-2.5 rounded-[9px] font-semibold text-[12.5px] hover:bg-tint transition-all flex-shrink-0 ${
+                        inactive ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'
+                      }`}
                     >
                       <span
+                        aria-hidden="true"
                         className={`material-symbols-outlined text-[16px] ${
                           isStarting ? 'animate-spin' : ''
                         }`}
@@ -360,7 +403,9 @@ function FormatSelector({ info, onDownload, startingFormat = null, disk = null }
                 )
               })}
               <div className="flex items-center gap-2.5 py-3.5 text-faint">
-                <span className="material-symbols-outlined text-[18px]">info</span>
+                <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                  info
+                </span>
                 <p className="text-[12px]">Audio extraction may take a moment under load.</p>
               </div>
             </div>
