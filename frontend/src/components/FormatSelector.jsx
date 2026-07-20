@@ -1,17 +1,18 @@
 import { useState } from 'react'
-import { formatDuration, formatFileSize, hasRoomFor } from '../lib/media'
+import { downloadBlockReason, formatDuration, formatFileSize, isUnlimitedQuota } from '../lib/media'
 import BackLink from './BackLink'
 
 // Id linking the "won't fit" reason to its Get button via aria-describedby.
 // Single-sourced so the note and the button reference the exact same id.
 const noSpaceId = (formatId) => `nospace-${formatId}`
 
-// The "Not enough space" reason shown under an oversized format (video + audio
-// blocks render it identically), wired to its button through noSpaceId.
-function NoSpaceNote({ formatId }) {
+// Why an oversized format can't be downloaded — either the user's storage quota
+// or the server's free disk (video + audio blocks render it identically), wired
+// to its button through noSpaceId.
+function NoSpaceNote({ formatId, reason }) {
   return (
     <p id={noSpaceId(formatId)} className="text-[11.5px] text-error font-semibold mt-0.5">
-      Not enough space
+      {reason}
     </p>
   )
 }
@@ -19,7 +20,12 @@ function NoSpaceNote({ formatId }) {
 function FormatSelector({ info, onDownload, startingFormat = null, disk = null }) {
   const [keep, setKeep] = useState(false)
 
-  const usedPct = disk?.total ? Math.min(100, Math.round((disk.used / disk.total) * 100)) : 0
+  const quota = disk?.quota || null
+  const unlimited = quota ? isUnlimitedQuota(quota.max) : false
+  const usedPct =
+    quota && !unlimited && quota.max > 0
+      ? Math.min(100, Math.round((quota.used / quota.max) * 100))
+      : 0
 
   const getHeight = (res) => {
     if (!res) return 0
@@ -179,25 +185,35 @@ function FormatSelector({ info, onDownload, startingFormat = null, disk = null }
         </span>
       </button>
 
-      {/* Server storage banner — used/free space, drives the disable check below */}
-      {disk ? (
+      {/* Your storage — the per-account quota that drives the disable check below.
+          The server's own free disk is a second, separate backstop and isn't the
+          user's business unless it actually blocks a format (see NoSpaceNote). */}
+      {quota ? (
         <div className="mb-stack-md bg-surface border border-line rounded-xl px-4 py-3.5">
           <div className="flex items-center gap-2.5 mb-2 flex-wrap">
             <span className="material-symbols-outlined text-ink text-[20px]" aria-hidden="true">
               hard_drive
             </span>
-            <p className="font-semibold text-[13.5px] text-ink">Server storage</p>
+            <p className="font-semibold text-[13.5px] text-ink">Your storage</p>
             <p className="ml-auto text-[12.5px] text-muted">
-              {formatFileSize(disk.free)} free of {formatFileSize(disk.total)} ·{' '}
-              {formatFileSize(disk.used)} used
+              {unlimited ? (
+                <>{formatFileSize(quota.used)} used · unlimited</>
+              ) : (
+                <>
+                  {formatFileSize(quota.remaining)} left of {formatFileSize(quota.max)} ·{' '}
+                  {formatFileSize(quota.used)} used
+                </>
+              )}
             </p>
           </div>
-          <div className="h-1.5 w-full rounded-full bg-line2 overflow-hidden">
-            <div
-              className={`h-full rounded-full ${usedPct >= 90 ? 'bg-pop' : 'bg-fill'}`}
-              style={{ width: `${usedPct}%` }}
-            />
-          </div>
+          {unlimited ? null : (
+            <div className="h-1.5 w-full rounded-full bg-line2 overflow-hidden">
+              <div
+                className={`h-full rounded-full ${usedPct >= 90 ? 'bg-pop' : 'bg-fill'}`}
+                style={{ width: `${usedPct}%` }}
+              />
+            </div>
+          )}
         </div>
       ) : null}
 
@@ -217,7 +233,7 @@ function FormatSelector({ info, onDownload, startingFormat = null, disk = null }
                 const h = getHeight(format.resolution)
                 const isStarting = startingFormat === format.formatId
                 const isBest = idx === 0
-                const fits = hasRoomFor(format.filesize, disk)
+                const blocked = downloadBlockReason(format.filesize, disk)
                 return (
                   <div
                     key={format.formatId}
@@ -244,7 +260,9 @@ function FormatSelector({ info, onDownload, startingFormat = null, disk = null }
                             </>
                           ) : null}
                         </p>
-                        {!fits ? <NoSpaceNote formatId={format.formatId} /> : null}
+                        {blocked ? (
+                          <NoSpaceNote formatId={format.formatId} reason={blocked} />
+                        ) : null}
                       </div>
                     </div>
                     <button
@@ -252,8 +270,8 @@ function FormatSelector({ info, onDownload, startingFormat = null, disk = null }
                       onClick={() =>
                         onDownload(format.formatId, format._type, keep, format.filesize)
                       }
-                      disabled={startingFormat !== null || !fits}
-                      aria-describedby={fits ? undefined : noSpaceId(format.formatId)}
+                      disabled={startingFormat !== null || blocked !== null}
+                      aria-describedby={blocked ? noSpaceId(format.formatId) : undefined}
                       className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-[9px] font-semibold text-[12.5px] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex-shrink-0 ${
                         isBest
                           ? 'bg-fill text-on-fill'
@@ -290,7 +308,7 @@ function FormatSelector({ info, onDownload, startingFormat = null, disk = null }
                 const isStarting = startingFormat === format.formatId
                 const isBest = idx === 0
                 const abr = Math.round(format.abr || 0)
-                const fits = hasRoomFor(format.filesize, disk)
+                const blocked = downloadBlockReason(format.filesize, disk)
                 return (
                   <div
                     key={format.formatId}
@@ -317,14 +335,16 @@ function FormatSelector({ info, onDownload, startingFormat = null, disk = null }
                             </>
                           ) : null}
                         </p>
-                        {!fits ? <NoSpaceNote formatId={format.formatId} /> : null}
+                        {blocked ? (
+                          <NoSpaceNote formatId={format.formatId} reason={blocked} />
+                        ) : null}
                       </div>
                     </div>
                     <button
                       type="button"
                       onClick={() => onDownload(format.formatId, 'audio', keep, format.filesize)}
-                      disabled={startingFormat !== null || !fits}
-                      aria-describedby={fits ? undefined : noSpaceId(format.formatId)}
+                      disabled={startingFormat !== null || blocked !== null}
+                      aria-describedby={blocked ? noSpaceId(format.formatId) : undefined}
                       className="flex items-center gap-1.5 bg-surface text-ink border border-ink px-3.5 py-2.5 rounded-[9px] font-semibold text-[12.5px] hover:bg-tint active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 flex-shrink-0"
                     >
                       <span

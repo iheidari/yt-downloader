@@ -1,6 +1,7 @@
 const { EventEmitter } = require('node:events');
 const { v4: uuidv4 } = require('uuid');
 const { getDownload, getDownloadFilePath, markMoved } = require('../../utils/storage');
+const { getActiveStore } = require('../downloadsStore');
 const { getProvider } = require('./index');
 const fs = require('node:fs');
 
@@ -111,6 +112,18 @@ async function run(job) {
     // source and openable in the visitor's cloud, on any device.
     const result = { provider: provider.name, ...last };
     markMoved(job.downloadId, result);
+    // Mirror it into the per-user history row: a moved download keeps its card
+    // (source URL + cloud link) but stops counting toward the owner's quota,
+    // since its bytes now live in the visitor's cloud, not ours. Best-effort —
+    // the upload itself already succeeded, so a DB blip must not fail the job.
+    const store = getActiveStore();
+    if (store) {
+      try {
+        await store.markMoved(job.downloadId, result);
+      } catch (err) {
+        console.error(`⚠️  Could not flag ${job.downloadId} as moved: ${err.message}`);
+      }
+    }
 
     job.status = 'complete';
     job.progress = 100;

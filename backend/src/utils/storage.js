@@ -176,6 +176,33 @@ function hasRoomFor(free, filesize) {
   return free >= requiredBytesFor(filesize);
 }
 
+// Sentinel `max_storage_bytes` meaning "no cap" (see schema.sql / CLAUDE.md).
+const UNLIMITED_QUOTA = -1;
+
+function isUnlimitedQuota(max) {
+  const n = Number(max);
+  return !Number.isFinite(n) || n < 0;
+}
+
+// Bytes a user has left before hitting their quota, or UNLIMITED_QUOTA when they
+// have no cap. Never negative — an over-quota user reads as 0 remaining.
+function remainingQuota(used, max) {
+  if (isUnlimitedQuota(max)) return UNLIMITED_QUOTA;
+  return Math.max(0, Number(max) - Number(used || 0));
+}
+
+// Per-user quota guard, the companion to hasRoomFor: `used` + `filesize` must
+// stay within `max`. Unlike the disk guard there's no multiplier/headroom —
+// the quota counts what a download will actually keep, not its transient merge
+// footprint. Unlimited quota and unknown/zero size are always allowed (the
+// latter mirrors hasRoomFor, so an unsized format is never blocked). Shared with
+// the frontend via the quota block in the /api/disk response, so there's no drift.
+function hasQuotaFor(used, max, filesize) {
+  if (isUnlimitedQuota(max)) return true;
+  if (!filesize || filesize <= 0) return true;
+  return Number(used || 0) + Number(filesize) <= Number(max);
+}
+
 function setKept(downloadId, kept) {
   const metadata = getDownloadMetadata(downloadId);
   if (!metadata) return false;
@@ -253,6 +280,10 @@ module.exports = {
   getDiskUsage,
   hasRoomFor,
   requiredBytesFor,
+  UNLIMITED_QUOTA,
+  isUnlimitedQuota,
+  remainingQuota,
+  hasQuotaFor,
   isValidDownloadId,
   saveDownloadMetadata,
   getDownloadMetadata,

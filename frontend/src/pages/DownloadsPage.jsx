@@ -561,7 +561,7 @@ function DownloadsPage() {
     forgetExpired,
     setKept,
     forgetMoved,
-    dropLocal,
+    dismissFailed,
     cancelDownload,
   } = useHistory()
   const [filter, setFilter] = useState('all')
@@ -628,7 +628,7 @@ function DownloadsPage() {
               )
             }
             if (item.status === 'failed') {
-              return <FailedCard key={item.downloadId} download={item} onDismiss={dropLocal} />
+              return <FailedCard key={item.downloadId} download={item} onDismiss={dismissFailed} />
             }
             return item._expired ? (
               <ExpiredCard key={item.downloadId} download={item} onForget={forgetExpired} />

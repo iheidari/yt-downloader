@@ -37,8 +37,15 @@ CREATE TABLE IF NOT EXISTS login_tokens (
 -- Sweep helper: find/prune expired tokens quickly.
 CREATE INDEX IF NOT EXISTS login_tokens_expires_at_idx ON login_tokens (expires_at);
 
--- Download history. Defined here so 0XC-100 can populate it; the app is not yet
--- wired to write to this table.
+-- Download history — the source of truth for a user's list of downloads
+-- (replacing the old browser-localStorage history). The MEDIA still lives on the
+-- filesystem under backend/downloads/<download_id>/; this table owns the
+-- lifecycle (status / expired / moved / kept) and the per-user attribution that
+-- the storage quota is computed from.
+--
+-- `status` is 'downloading' | 'complete' | 'failed'. `expired` = media dropped
+-- but the row kept (re-downloadable); `moved` = media handed to the user's own
+-- cloud, with the provider link in `moved_info`.
 CREATE TABLE IF NOT EXISTS downloads (
   download_id uuid PRIMARY KEY,
   user_id     uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -52,8 +59,15 @@ CREATE TABLE IF NOT EXISTS downloads (
   expired     boolean NOT NULL DEFAULT false,
   expired_at  timestamptz,
   moved       boolean NOT NULL DEFAULT false,
+  moved_info  jsonb,
   kept        boolean NOT NULL DEFAULT false,
   created_at  timestamptz NOT NULL DEFAULT now()
 );
 
+-- Added after the table shipped in 0XC-97; keeps re-running this file safe on a
+-- database that already has the original definition.
+ALTER TABLE downloads ADD COLUMN IF NOT EXISTS moved_info jsonb;
+
+-- The listing query is always "this user's rows, newest first".
 CREATE INDEX IF NOT EXISTS downloads_user_id_idx ON downloads (user_id);
+CREATE INDEX IF NOT EXISTS downloads_user_created_idx ON downloads (user_id, created_at DESC);

@@ -11,6 +11,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-do-not-use-in-pr
 const { createFilesRouter } = require('./files');
 const { createRequireAuth } = require('../middleware/requireAuth');
 const { createMemoryStore } = require('../services/authStore');
+const { createMemoryStore: createDownloadsMemoryStore } = require('../services/downloadsStore');
 
 let server;
 let base;
@@ -20,7 +21,7 @@ before(async () => {
   app.use(express.json());
   app.use(cookieParser());
   const requireAuth = createRequireAuth(createMemoryStore());
-  app.use('/api/files', createFilesRouter(requireAuth));
+  app.use('/api/files', createFilesRouter(requireAuth, { store: createDownloadsMemoryStore() }));
   await new Promise((resolve) => {
     server = app.listen(0, () => {
       base = `http://127.0.0.1:${server.address().port}`;

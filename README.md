@@ -317,10 +317,15 @@ pip install yt-dlp
 - Ensure backend and frontend are running on correct ports
 - Check CORS configuration in `backend/src/server.js`
 
-### History lost on refresh
-- Check browser's localStorage is enabled
-- Look for console errors about localStorage access
-- Try in a different browser/incognito mode
+### History looks empty or out of date
+- History lives in Postgres, scoped to your account — make sure you're logged in as the right user
+- Confirm `DATABASE_URL` is set and the schema is applied (`cd backend && npm run db:init`)
+- Look for `❌ Server sync error` in the browser console, or a 401 (expired session — log in again)
+
+### "Not enough storage in your account" when starting a download
+- You've hit your per-user quota (`users.max_storage_bytes`, default 5 GB). Delete
+  or move some downloads to free space, or raise the value on your `users` row in
+  the Neon dashboard (`-1` = unlimited)
 
 ## Development
 
@@ -345,15 +350,17 @@ npm run build  # Creates dist/ folder
 ## Security Considerations
 
 - Downloads are stored temporarily and auto-deleted
+- Download history is per-user: every list/expire/delete/keep query is scoped to the session's `user_id`, so one account can't read or remove another's downloads
 - CORS is pinned to `FRONTEND_URL` with credentials enabled (never a wildcard)
 - Helmet provides security headers but CSP is disabled for video streaming
 - Authentication is an emailed single-use magic link → JWT httpOnly cookie session. Users are a closed, hand-managed set in the Neon `users` table (no public signup). All API routes require a session except the public `GET /api/files/:id/:filename` media route (so share links work)
 
 ## Contributing
 
-Auth, the database layer, and the login UI now exist (magic-link login, Neon Postgres, a gated React SPA). Still on the roadmap for full multi-user support:
-1. Move download history to Postgres and associate downloads with user IDs
-2. Enforce the per-user storage quota (`users.max_storage_bytes`)
+Multi-user support is in place: magic-link login, Neon Postgres, a gated React SPA,
+per-user download history in the `downloads` table, and the per-user storage quota
+(`users.max_storage_bytes`, `-1` = unlimited) enforced alongside the global free-disk
+guard.
 
 ## License
 

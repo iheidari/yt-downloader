@@ -71,6 +71,19 @@ function subscribe(downloadId, { onProgress, onComplete, onError }) {
   };
 }
 
+// Run a caller-supplied terminal hook (see startJob) without letting it affect
+// the job: the hooks persist the outcome to Postgres, and a database blip must
+// not turn a finished download into a failed one — or crash the process on an
+// unhandled rejection.
+async function runHook(hook, arg, downloadId) {
+  if (typeof hook !== 'function') return;
+  try {
+    await hook(arg);
+  } catch (err) {
+    console.error(`❌ Download job hook failed ${downloadId}: ${err.message}`);
+  }
+}
+
 // Drive one job's yt-dlp download to completion, relaying progress and the
 // terminal outcome through its emitter. Never throws — the terminal state is
 // captured on the job record so observers (current and future) can read it.
@@ -119,6 +132,10 @@ async function runJob(job) {
     };
     job.terminalAt = Date.now();
     console.log(`✅ Download job complete ${downloadId}`);
+    // Persist the outcome (the DB row's real filename + size) BEFORE telling
+    // observers, so a client that reloads the moment it sees `complete` reads a
+    // history row that already matches.
+    await runHook(job.hooks.onComplete, job.result, downloadId);
     job.emitter.emit('complete', job.result);
   } catch (error) {
     // downloadVideo/downloadAudio already deleteDownload() their partial files on
@@ -134,13 +151,20 @@ async function runJob(job) {
     } else {
       console.error(`❌ Download job error ${downloadId}:`, error.message);
     }
+    await runHook(job.hooks.onError, job.error, downloadId);
     job.emitter.emit('error', job.error);
   }
 }
 
 // Mint a running job and kick off its download. Enforces the concurrency cap —
 // the single place it's checked, before any SSE is opened. Returns the job.
-function startJob(params) {
+//
+// `hooks` ({ onComplete(result), onError(message) }) let the caller persist the
+// terminal outcome — the download route wires them to the per-user `downloads`
+// row. They're injected rather than imported so this module stays free of any
+// database dependency (and unit-testable without one); failures inside them are
+// swallowed and logged (see runHook).
+function startJob(params, hooks = {}) {
   if (runningCount() >= maxConcurrent()) {
     throw new DownloadCapError(maxConcurrent());
   }
@@ -160,6 +184,7 @@ function startJob(params) {
     cancelled: false,
     terminalAt: null,
     params,
+    hooks,
     emitter,
     abortController: new AbortController(),
   };
