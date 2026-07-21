@@ -12,6 +12,8 @@ env:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
 
@@ -29,6 +31,8 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
 
@@ -46,8 +50,13 @@ jobs:
         working-directory: backend
         run: npm test
 
+  # Named `build` here (there's no docker job in this workflow to collide with);
+  # deploy.yml's identical job is named `build-frontend` because deploy.yml's
+  # `build` name is already taken by its docker image build.
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
 

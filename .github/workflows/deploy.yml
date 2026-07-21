@@ -17,6 +17,8 @@ env:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
 
@@ -34,6 +36,8 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
 
@@ -51,8 +55,12 @@ jobs:
         working-directory: backend
         run: npm test
 
+  # Named `build-frontend` (not `build`) because the docker image build job
+  # below is already named `build`; ci.yml's identical job is plain `build`.
   build-frontend:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
 
