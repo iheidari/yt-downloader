@@ -83,6 +83,15 @@ function createStore(query) {
       return rows[0] ? toApiRow(rows[0]) : null;
     },
 
+    // Unscoped lookup — no `user_id` filter. Only for the public per-item
+    // metadata endpoint (0XC-112), which deliberately resolves a download for
+    // anyone holding its unguessable id; the route projects the result down to
+    // a public-safe subset before it ever reaches a response.
+    async findById(downloadId) {
+      const { rows } = await query('SELECT * FROM downloads WHERE download_id = $1', [downloadId]);
+      return rows[0] ? toApiRow(rows[0]) : null;
+    },
+
     // Bytes currently counting against the user's quota.
     async usageForUser(userId) {
       const { rows } = await query(
@@ -252,6 +261,10 @@ function createMemoryStore({ rows = [] } = {}) {
     async findForUser(downloadId, userId) {
       const row = byId.get(downloadId);
       return row && row.user_id === userId ? toApiRow(row) : null;
+    },
+    async findById(downloadId) {
+      const row = byId.get(downloadId);
+      return row ? toApiRow(row) : null;
     },
     async usageForUser(userId) {
       let used = 0;

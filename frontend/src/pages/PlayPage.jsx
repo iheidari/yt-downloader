@@ -4,7 +4,7 @@ import BackLink from '../components/BackLink'
 import VideoPlayer from '../components/VideoPlayer'
 import { useHistory } from '../context/useHistory'
 import { usePlayer } from '../context/usePlayer'
-import { fetchDownloads, fileExpiryLabel, fileUrl } from '../lib/media'
+import { fetchDownloadMeta, fetchDownloads, fileExpiryLabel, fileUrl } from '../lib/media'
 
 function PlayPageContent({ downloadId }) {
   const { history, apiUrl, findById } = useHistory()
@@ -17,10 +17,15 @@ function PlayPageContent({ downloadId }) {
     if (fromContext) return
     let cancelled = false
 
+    // First try our own (session-scoped) history — works for the owner. If the
+    // id isn't there (not the owner, logged out, or the row is expired), fall
+    // back to the public per-item metadata endpoint so a shared link still
+    // resolves for someone else (0XC-112).
     fetchDownloads(apiUrl)
-      .then((all) => {
+      .then((all) => all.find((d) => d.downloadId === downloadId))
+      .catch(() => null)
+      .then((found) => {
         if (cancelled) return
-        const found = all.find((d) => d.downloadId === downloadId)
         if (found && !found.expired) {
           setColdResult({
             status: 'found',
@@ -31,16 +36,18 @@ function PlayPageContent({ downloadId }) {
           })
           return
         }
-        if (found?.expired) {
-          setColdResult({ status: 'missing', data: found })
-          return
-        }
-        setColdResult({ status: 'missing', data: findById(downloadId) })
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setColdResult({ status: 'missing', data: findById(downloadId) })
-        }
+
+        return fetchDownloadMeta(apiUrl, downloadId).then((meta) => {
+          if (cancelled) return
+          if (meta && !meta.expired && meta.filename) {
+            setColdResult({
+              status: 'found',
+              data: { ...meta, fileUrl: fileUrl(apiUrl, meta.downloadId, meta.filename) },
+            })
+            return
+          }
+          setColdResult({ status: 'missing', data: meta || found || findById(downloadId) })
+        })
       })
 
     return () => {

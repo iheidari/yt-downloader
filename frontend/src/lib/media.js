@@ -71,6 +71,21 @@ export async function fetchDownloads(apiUrl) {
   return data.data
 }
 
+// Public per-item metadata for a download, keyed only by its id — resolves a
+// /play/:id share link for someone who isn't the owner (or isn't logged in).
+// No credentials needed; the endpoint is public. Returns null on any failure
+// (unknown id, network error) so the caller falls back to a "missing" state.
+export async function fetchDownloadMeta(apiUrl, downloadId) {
+  try {
+    const res = await fetch(`${apiUrl}/api/files/meta/${downloadId}`)
+    const data = await res.json()
+    if (!data.success || !data.data) return null
+    return data.data
+  } catch {
+    return null
+  }
+}
+
 // Storage state for the format-screen banner + fit checks. Returns null on any
 // failure so the UI degrades to "no banner, nothing blocked" rather than
 // breaking the format list. Shape: { total, free, used, sizeMultiplier,
