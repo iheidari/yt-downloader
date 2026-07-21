@@ -13,7 +13,7 @@ Tickets live in Linear under the **Tubekeep** project (team **0xCode**, key `0XC
 ./start.sh
 
 # Backend only
-cd backend && npm run dev      # nodemon auto-reload
+cd backend && npm run dev      # nodemon auto-reload (watch scope pinned in backend/nodemon.json — see below)
 cd backend && npm start        # production
 cd backend && npm run cleanup  # run cleanup once and exit
 
@@ -29,6 +29,8 @@ npm run check                  # biome check --write .  (apply safe lint fixes +
 ```
 
 Backend tests are plain `node:test` files colocated with the source (`*.test.js`), run with `cd backend && npm test` (`node --test`). There is no frontend test setup. Linting/formatting is [Biome](https://biomejs.dev) via a single root `biome.json`; the `frontend/` and `backend/` packages each also expose `npm run lint` / `npm run format` that shell out to the same root-installed Biome.
+
+**`backend/nodemon.json` is load-bearing — don't delete it.** Nodemon's default watch is the *entire cwd* for `.js`/`.json` changes, and `backend/downloads/` sits inside that cwd. Since every completed job writes `downloads/<downloadId>/metadata.json`, the default config made **finishing a download restart the dev server** — killing the SSE stream, wiping the in-memory job registry, and dropping every in-flight request. The browser reports that dropped connection as a *CORS* error ("CORS request did not succeed. Status code: (null)"), which points nowhere near the real cause. `nodemon.json` pins the watch to `src` so downloaded media can never trigger a reload. This affects dev only — production runs `npm start` with no watcher.
 
 **Single-server mode:** if `frontend/dist/` exists, `backend` serves it statically with an SPA fallback (see `server.js`). So `cd frontend && npm run build` then `cd backend && npm start` serves the whole app on port 3001 with no separate frontend process. This is how production runs.
 
@@ -57,6 +59,7 @@ This file carries deliberate workarounds for YouTube's 2026-era extraction break
 - **`YOUTUBE_EXTRACTOR_ARGS = 'youtube:player_client=android_vr;formats=missing_pot'`** is passed to *every* yt-dlp invocation. The default web/tv clients require a JS challenge solver that's broken in yt-dlp 2026.02.x (yields only a single 360p format and hangs). `android_vr` restores the full 144p→4K ladder; `formats=missing_pot` keeps formats whose URLs lack a PO Token. Namespaced under `youtube:` so other extractors are unaffected.
 - **SABR retries.** YouTube's per-session SABR experiment intermittently strips format URLs. `getVideoInfo` retries the metadata fetch up to 4× with back-off until video-only formats appear. `downloadVideo`/`downloadAudio` retry up to 3× on `Requested format is not available|SABR|missing a URL`, and use fallback format strings (e.g. `${formatId}+bestaudio/bestvideo+bestaudio/best`) so a vanished exact format still resolves to *something*.
 - **Binary & PATH.** Prefers `~/.local/bin/yt-dlp` over the system one, and injects Node's dir into `PATH` because yt-dlp's SABR challenge solver shells out to `node`.
+- **`YTDLP_FORCE_IPV4`.** `runYtDlp` prepends `--force-ipv4` to *every* invocation when this is `true`. On a network whose router advertises an IPv6 default route while IPv6 traffic is actually black-holed, yt-dlp takes **~85s per call instead of ~1.5s** — Python's urllib has no Happy Eyeballs, so it waits out the full TCP timeout on each AAAA address before falling back to IPv4. Symptom: `/api/info` spins for a minute-plus and downloads crawl, with near-zero CPU. Diagnose with `curl -6 -m 5 https://www.youtube.com` (hangs) vs `curl -4` (fast). Opt-in rather than default because it would break a genuinely IPv6-only host.
 - Video+audio (`type: 'video'`) merges to mp4 via `--merge-output-format mp4`; `type: 'combined'` downloads a pre-merged format as-is; `type: 'audio'` pulls bestaudio.
 
 ### Expire vs. delete (two-tier lifecycle)
@@ -76,7 +79,7 @@ This rule is **server-side**, in the download job's `onComplete` hook (`supersed
 
 ### Backend (`backend/src/`)
 - **`server.js`** — Express entry (helmet with CSP disabled for media + cross-origin resource policy, CORS, morgan), route mounting, static SPA serving, cleanup scheduler bootstrap.
-- **`routes/`** — thin HTTP layer: `info.js`, `download.js` (start job / observer SSE / cancel), `files.js` (range serving + per-user list + expire/delete), `disk.js` (`GET /api/disk` — disk usage + fit knobs + the caller's quota), `cloud.js` (OAuth + move-to-cloud; uses the store only to confirm the caller owns the download). Every router except `info.js` is a **factory** — `createDownloadRouter`/`createDiskRouter`/`createCloudRouter` take `{ store }` and `createFilesRouter(requireAuth, { store })` — taking the injected `downloadsStore`, so they unit-test against `createMemoryStore()` without Postgres. (`auth.js` follows the same pattern over `authStore`.)
+- **`routes/`** — thin HTTP layer: `info.js`, `download.js` (start job / observer SSE / cancel), `files.js` (range serving + public per-item metadata + per-user list + expire/delete), `disk.js` (`GET /api/disk` — disk usage + fit knobs + the caller's quota), `cloud.js` (OAuth + move-to-cloud; uses the store only to confirm the caller owns the download). Every router except `info.js` is a **factory** — `createDownloadRouter`/`createDiskRouter`/`createCloudRouter` take `{ store }` and `createFilesRouter(requireAuth, { store })` — taking the injected `downloadsStore`, so they unit-test against `createMemoryStore()` without Postgres. (`auth.js` follows the same pattern over `authStore`.)
 - **`services/ytdlp.js`** — all subprocess spawning (see above).
 - **`services/downloadManager.js`** — in-memory job registry that runs downloads to completion decoupled from the client SSE; enforces `MAX_CONCURRENT_DOWNLOADS` (see Download flow). Takes no database dependency — the caller injects `{ onComplete, onError }` hooks into `startJob` to persist the terminal outcome.
 - **`services/cleanup.js`** — hourly scheduler; also runnable standalone (`npm run cleanup`, filesystem-only — no store is registered in that process). Also prunes finished download-job records (`sweepJobs`) and reconciles the `downloads` table (`expireMissing` / `failStale`).
@@ -106,7 +109,7 @@ Routing-based, **not** a single mega-component (the old `App.jsx`-holds-all-stat
 - **`context/`** follows the same three-file split for every provider (React Fast Refresh / Biome's `useComponentExportOnlyModules` rule): `xContext.js` (`createContext` + constants), `XContext.jsx` (the provider with all logic), `useX.js` (the hook). This holds for `history*`, `player*`, and **`auth*`** (`authContext.js` / `AuthContext.jsx` / `useAuth.js`). Keep this separation when editing. `AuthProvider` loads `GET /api/auth/me` on mount and exposes `{ user, loading, login(email), logout(), refresh() }`; `user` is `{ email, name, max_storage_bytes }` or `null`.
 - **Auth is cookie-based** — the session is a JWT httpOnly cookie the frontend never reads. `lib/media.js` exports **`apiFetch`**: a `credentials: 'include'` wrapper every same-origin API call routes through, which broadcasts the `AUTH_UNAUTHORIZED_EVENT` (`tk:unauthorized`) window event on any 401 so `AuthProvider` drops the user and `ProtectedRoute` bounces to `/login` (session expired). SSE streams (`useDownloadProgress`, `useCloudMove`) pass `{ withCredentials: true }` for the same reason. The auth endpoints themselves (`/api/auth/*`) use plain credentialed `fetch` inside `AuthProvider`, **not** `apiFetch` — a 401 from `/me` is the normal "logged out" signal, not a session-expiry event, so it must not re-broadcast the event.
 - **`components/`** — `UrlInput`, `FormatSelector`, `ProgressBar`, `VideoPlayer`, `ProtectedRoute`.
-- **Share links:** `/play/:downloadId` is a stable shareable URL (the Share button copies `window.location.origin/play/:id`). It is **exempt from the login gate**, and `PlayPage` does a "cold" `GET /api/files` lookup when the download isn't in local context. Note that `/api/files` (the list) is itself session-gated (only `GET /api/files/:id/:filename` is public), and since 0XC-100 it returns only the **caller's own** rows, **only the owner can resolve a share link**. A non-owner (logged in or not) reaches the page but can't turn the id into a filename, so it renders as missing. Restoring cross-user sharing needs a public single-item metadata endpoint — tracked in 0XC-112, deliberately out of scope here.
+- **Share links:** `/play/:downloadId` is a stable shareable URL (the Share button copies `window.location.origin/play/:id`). It is **exempt from the login gate**. `PlayPage`'s cold-lookup effect first tries `GET /api/files` (session-scoped, since 0XC-100 it returns only the **caller's own** rows) and, if the id isn't there — not the owner, logged out, or the row is expired — falls back to the **public** `GET /api/files/meta/:downloadId` (0XC-112). That endpoint resolves any download by its unguessable id for anyone, no session required, but returns only `{ downloadId, title, thumbnail, type, filename, expired }` — no `user_id`, email, source url, or size — and reports `expired: true` (no filename) whenever there's no local media to serve (still downloading, failed, moved to the owner's cloud, or actually expired), so a non-owner can't distinguish which. It's declared in `routes/files.js` **before** the `/:downloadId/:filename` serve route (which would otherwise swallow `meta/<id>` as `downloadId="meta"`) and before the router's `requireAuth` choke, and is rate-limited separately from the (unthrottled) serve route.
 - `VITE_API_URL` defaults to `window.location.origin` when unset (works in single-server mode).
 
 ### Styling system — non-obvious
@@ -130,6 +133,10 @@ PORT=3001
 FRONTEND_URL=http://localhost:5173   # CORS origin (pinned; credentials enabled). Unset = same-origin only
 NODE_ENV=development
 MAX_CONCURRENT_DOWNLOADS=3            # max simultaneous downloads; unset/invalid → 3 (429 over the cap)
+YTDLP_FORCE_IPV4=true                 # pass --force-ipv4 to every yt-dlp call. Set this on a network that
+                                      # advertises an IPv6 default route but black-holes IPv6 traffic —
+                                      # otherwise every call stalls ~80s waiting out AAAA TCP timeouts
+                                      # (Python's urllib has no Happy Eyeballs). Leave unset on IPv6-only hosts
 
 # --- Auth + database (magic-link login) -----------------------------------
 DATABASE_URL=postgres://user:pass@host/db?sslmode=require  # Neon connection string
