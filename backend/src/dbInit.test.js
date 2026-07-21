@@ -39,3 +39,25 @@ test('applySchema throws when the required table has no columns at all (e.g. mis
   const pool = fakePool({});
   await assert.rejects(() => applySchema(pool), /downloads/);
 });
+
+test('applySchema propagates a schema DDL failure and never reaches the column assertion', async () => {
+  // A bad schema.sql (syntax error, permissions issue, etc.) must surface as-is
+  // rather than being swallowed or masked by a later "missing column" message.
+  const ddlError = new Error('syntax error at or near "TABEL"');
+  let infoSchemaQueried = false;
+  const pool = {
+    async query(text) {
+      if (text.includes('information_schema.columns')) {
+        infoSchemaQueried = true;
+        return { rows: [] };
+      }
+      throw ddlError;
+    },
+  };
+  await assert.rejects(() => applySchema(pool), /syntax error/);
+  assert.strictEqual(
+    infoSchemaQueried,
+    false,
+    'the column assertion must not run after a DDL failure',
+  );
+});
