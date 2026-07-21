@@ -5,6 +5,8 @@ on:
   workflow_dispatch:
 
 env:
+  # Docker actions still ship Node 20; opt their runtime into Node 24 ahead of
+  # GitHub forcing the switch on 2026-06-02. Remove once the actions ship Node 24.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -17,6 +19,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
