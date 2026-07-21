@@ -34,6 +34,25 @@ afterEach(() => {
   }
 });
 
+// Starts a job and resolves/rejects with its terminal outcome — the
+// subscribe()-wrapped-in-a-Promise shape every test here needs.
+function runToCompletion(params, hooks) {
+  const job = startJob(params, hooks);
+  return new Promise((resolve, reject) => {
+    const unsubscribe = subscribe(job.downloadId, {
+      onProgress: () => {},
+      onComplete: (result) => {
+        unsubscribe();
+        resolve(result);
+      },
+      onError: (err) => {
+        unsubscribe();
+        reject(new Error(String(err)));
+      },
+    });
+  });
+}
+
 test('a completion hook that throws does not stop the job from reporting success', async () => {
   // This is the existing, deliberate guarantee 0XC-120 builds on: a DB blip in
   // the completion hook must never turn a finished download into a failed
@@ -43,7 +62,7 @@ test('a completion hook that throws does not stop the job from reporting success
   created.push(ensureDownloadDir(downloadId));
 
   let hookCalls = 0;
-  const job = startJob(
+  const result = await runToCompletion(
     {
       downloadId,
       url: 'https://example.com/watch?v=x',
@@ -64,20 +83,6 @@ test('a completion hook that throws does not stop the job from reporting success
     },
   );
 
-  const result = await new Promise((resolve, reject) => {
-    const unsubscribe = subscribe(job.downloadId, {
-      onProgress: () => {},
-      onComplete: (r) => {
-        unsubscribe();
-        resolve(r);
-      },
-      onError: (err) => {
-        unsubscribe();
-        reject(new Error(`unexpected error event: ${err}`));
-      },
-    });
-  });
-
   assert.equal(hookCalls, 1);
   assert.equal(result.filename, 'stub.mp4');
   assert.equal(result.size, 4242);
@@ -91,7 +96,7 @@ test('the download directory really did receive metadata.json before the hook ra
   const dir = ensureDownloadDir(downloadId);
   created.push(dir);
 
-  const job = startJob(
+  await runToCompletion(
     {
       downloadId,
       url: 'https://example.com/watch?v=y',
@@ -103,20 +108,6 @@ test('the download directory really did receive metadata.json before the hook ra
     },
     { onComplete: () => {}, onError: () => {} },
   );
-
-  await new Promise((resolve, reject) => {
-    const unsubscribe = subscribe(job.downloadId, {
-      onProgress: () => {},
-      onComplete: () => {
-        unsubscribe();
-        resolve();
-      },
-      onError: (err) => {
-        unsubscribe();
-        reject(new Error(String(err)));
-      },
-    });
-  });
 
   assert.equal(fs.existsSync(`${dir}/metadata.json`), true);
   const metadata = JSON.parse(fs.readFileSync(`${dir}/metadata.json`, 'utf8'));

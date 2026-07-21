@@ -26,6 +26,46 @@ const RECONCILE_GRACE_MS = 10 * 60 * 1000;
 
 let cleanupInterval = null;
 
+// A download whose media landed on disk must never end up recorded as failed.
+// metadata.json is written synchronously right before the job's completion
+// hook runs (downloadManager.js), so a `downloading` row whose directory
+// already holds the finished file didn't fail — the hook's DB write was lost
+// (e.g. a transient error), not the download. Detect it from the `downloads`
+// snapshot the caller already scanned and correct the row from the real file,
+// not a stale/client-estimated size.
+//
+// This MUST run before failStale: on the same sweep, whichever runs first
+// wins the race for a row that qualifies for both, and only this one is
+// correct for a row with finished media on disk. A download that hasn't
+// finished (no metadata.json yet) is absent from `downloads` entirely, so a
+// genuinely in-flight job is untouched here.
+//
+// Pre-filters to rows that are actually `downloading` in the DB first —
+// normally none, and never more than a handful — instead of stat-ing and
+// updating every live download on disk each sweep. Unlike
+// expireMissing/failStale, this can't be one bulk UPDATE: it needs a distinct
+// on-disk filename/size per row, which only exists after reading the
+// filesystem. Returns the number of rows reconciled.
+async function reconcileStrandedDownloads(store, downloads) {
+  const downloadingIds = new Set(await store.downloadingIds());
+  let reconciled = 0;
+  for (const d of downloads) {
+    if (!d.filename || !downloadingIds.has(d.downloadId)) continue;
+    const size = getDownloadFileSize(d.downloadId, d.filename);
+    if (size === null) continue; // metadata names a file that isn't actually there
+    if (
+      await store.markComplete(
+        d.downloadId,
+        { filename: d.filename, filesize: size },
+        { onlyIfDownloading: true },
+      )
+    ) {
+      reconciled++;
+    }
+  }
+  return reconciled;
+}
+
 // `store` is the per-user history store (server.js passes the live one). Omitted
 // — as in unit tests and the standalone CLI, which have no database — the sweep
 // is filesystem-only.
@@ -77,42 +117,7 @@ async function runCleanup(store = null) {
   // standalone CLI without a database, where this is a no-op.
   if (store) {
     try {
-      // A download whose media landed on disk must never end up recorded as
-      // failed. metadata.json is written synchronously right before the job's
-      // completion hook runs (downloadManager.js), so a `downloading` row
-      // whose directory already holds the finished file didn't fail — the
-      // hook's DB write was lost (e.g. a transient error), not the download.
-      // Detect it from the disk snapshot already taken above and correct the
-      // row from the real file, not a stale/client-estimated size.
-      //
-      // This MUST run before failStale below: on the same sweep, whichever
-      // runs first wins the race for a row that qualifies for both, and only
-      // this one is correct for a row with finished media on disk. A download
-      // that hasn't finished (no metadata.json yet) is absent from `downloads`
-      // entirely, so a genuinely in-flight job is untouched here.
-      //
-      // Pre-filter to rows that are actually `downloading` in the DB first —
-      // normally none, and never more than a handful — instead of stat-ing
-      // and updating every live download on disk each sweep. Unlike
-      // expireMissing/failStale below, this can't be one bulk UPDATE: it
-      // needs a distinct on-disk filename/size per row, which only exists
-      // after reading the filesystem.
-      const downloadingIds = new Set(await store.downloadingIds());
-      let strandedComplete = 0;
-      for (const d of downloads) {
-        if (!d.filename || !downloadingIds.has(d.downloadId)) continue;
-        const size = getDownloadFileSize(d.downloadId, d.filename);
-        if (size === null) continue; // metadata names a file that isn't actually there
-        if (
-          await store.markComplete(
-            d.downloadId,
-            { filename: d.filename, filesize: size },
-            { onlyIfDownloading: true },
-          )
-        ) {
-          strandedComplete++;
-        }
-      }
+      const strandedComplete = await reconcileStrandedDownloads(store, downloads);
       if (strandedComplete > 0) {
         console.log(
           `🧹 Reconciled ${strandedComplete} stranded download(s) that had already finished`,

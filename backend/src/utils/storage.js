@@ -121,9 +121,6 @@ function getDownloadFilePath(downloadId, filename) {
   return null;
 }
 
-// Create (idempotently) the per-download directory and return its path. The
-// only place the download-dir layout is minted, so callers never join paths
-// under downloadsDir themselves.
 // Actual on-disk byte size of a download's declared result file, or null if
 // it's missing (metadata names a file that isn't actually there — e.g. a
 // partial download). Reuses getDownloadFilePath's validation/traversal guard,
@@ -140,6 +137,9 @@ function getDownloadFileSize(downloadId, filename) {
   }
 }
 
+// Create (idempotently) the per-download directory and return its path. The
+// only place the download-dir layout is minted, so callers never join paths
+// under downloadsDir themselves.
 function ensureDownloadDir(downloadId) {
   if (!isValidDownloadId(downloadId)) {
     throw new Error(`Invalid downloadId: ${downloadId}`);
