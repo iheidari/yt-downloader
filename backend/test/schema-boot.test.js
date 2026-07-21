@@ -13,20 +13,38 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert');
 const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const PORT = 3992;
 const base = `http://localhost:${PORT}`;
 let server;
+let tmpDir;
+let stdout = '';
 let stderr = '';
 
 before(async () => {
+  // A scratch cwd whose `.env` does NOT set DATABASE_URL. Deleting the var
+  // from the spawned env isn't enough by itself: server.js's `dotenv.config()`
+  // reads `cwd/.env`, so on a machine whose real backend/.env (this repo's
+  // own README has you create one) sets DATABASE_URL, spawning with the
+  // inherited cwd would silently load it right back — running applySchema()
+  // against a real database instead of exercising the intended skip path.
+  // Same fix as cors-env.test.js uses for FRONTEND_URL.
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tk-schema-boot-'));
+  fs.writeFileSync(path.join(tmpDir, '.env'), '');
+
   const env = { ...process.env, PORT: String(PORT), NODE_ENV: 'test' };
   delete env.DATABASE_URL; // must exercise the skip path, not inherit a real one
 
   server = spawn('node', [path.join(__dirname, '..', 'src', 'server.js')], {
+    cwd: tmpDir,
     env,
-    stdio: ['ignore', 'ignore', 'pipe'],
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  server.stdout.on('data', (chunk) => {
+    stdout += chunk.toString();
   });
   server.stderr.on('data', (chunk) => {
     stderr += chunk.toString();
@@ -46,6 +64,7 @@ before(async () => {
 
 after(() => {
   if (server) server.kill('SIGKILL');
+  if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
 test('server boots and serves /health with no DATABASE_URL configured (ensureSchema skip path)', async () => {
@@ -54,11 +73,15 @@ test('server boots and serves /health with no DATABASE_URL configured (ensureSch
   const body = await res.json();
   assert.strictEqual(body.status, 'ok');
 
-  // ensureSchema()'s only observable output is on the paths it must NOT take
-  // here: a successful apply logs "Database schema up to date", and a failed
-  // one logs "Failed to apply database schema". Neither should appear — the
-  // function should have returned immediately on the missing DATABASE_URL
-  // check, before ever touching getPool()/applySchema().
+  // ensureSchema()'s only observable output is on the two paths it must NOT
+  // take here: a successful apply logs "Database schema up to date" (stdout),
+  // a failed one logs "Failed to apply database schema" (stderr). Neither
+  // should appear — the function should have returned immediately on the
+  // missing DATABASE_URL check, before ever touching getPool()/applySchema().
+  assert.ok(
+    !stdout.includes('Database schema up to date'),
+    'ensureSchema must not attempt a schema apply when DATABASE_URL is unset',
+  );
   assert.ok(
     !stderr.includes('Failed to apply database schema'),
     'ensureSchema must not attempt (and fail) a schema apply when DATABASE_URL is unset',

@@ -14,7 +14,7 @@ function fakePool(columnsByTable) {
     async query(text, params) {
       queries.push(text);
       if (text.includes('information_schema.columns')) {
-        const table = params[0];
+        const table = params[1];
         const columns = columnsByTable[table] || [];
         return { rows: columns.map((column_name) => ({ column_name })) };
       }

@@ -23,8 +23,11 @@ const REQUIRED_COLUMNS = {
 async function assertRequiredColumns(pool) {
   for (const [table, columns] of Object.entries(REQUIRED_COLUMNS)) {
     const { rows } = await pool.query(
-      'SELECT column_name FROM information_schema.columns WHERE table_name = $1',
-      [table],
+      // Qualify by schema too — schema.sql never sets search_path, so every
+      // table it creates lands in "public", and an unqualified table_name
+      // match would otherwise also count same-named tables in other schemas.
+      'SELECT column_name FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2',
+      ['public', table],
     );
     const present = new Set(rows.map((row) => row.column_name));
     const missing = columns.filter((column) => !present.has(column));
