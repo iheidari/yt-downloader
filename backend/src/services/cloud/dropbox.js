@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const { Dropbox } = require('dropbox');
+const { CloudError, postToken, refresh: sharedRefresh, withRetry } = require('./shared');
 
 // --- Dropbox "Move to cloud" provider -------------------------------------
 // Implements the CloudProvider shape consumed by services/cloud/index.js:
@@ -28,31 +29,7 @@ function isEnabled() {
 
 // Public, non-secret config the frontend may read to render the connect popup.
 function getPublicConfig() {
-  return { appKey: APP_KEY, redirectUri: REDIRECT_URI };
-}
-
-// A CloudError carries a machine-readable `code` so the route/UI can react
-// (e.g. quota → offer "download instead", auth → prompt reconnect).
-class CloudError extends Error {
-  constructor(code, message) {
-    super(message);
-    this.code = code;
-  }
-}
-
-async function postToken(params) {
-  const res = await fetch(TOKEN_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams(params).toString(),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    // Never log the code/verifier/token; only the opaque Dropbox error slug.
-    const slug = body.error_description || body.error || `HTTP ${res.status}`;
-    throw new CloudError('oauth', `Dropbox token exchange failed: ${slug}`);
-  }
-  return body;
+  return { clientId: APP_KEY, redirectUri: REDIRECT_URI };
 }
 
 async function getAccount(accessToken) {
@@ -67,14 +44,18 @@ async function getAccount(accessToken) {
 // authorization-code → tokens. Uses PKCE (code_verifier) AND the app secret;
 // Dropbox accepts both for a confidential client.
 async function exchangeCode({ code, codeVerifier, redirectUri }) {
-  const body = await postToken({
-    grant_type: 'authorization_code',
-    code,
-    code_verifier: codeVerifier,
-    client_id: APP_KEY,
-    client_secret: APP_SECRET,
-    redirect_uri: redirectUri || REDIRECT_URI,
-  });
+  const body = await postToken(
+    TOKEN_ENDPOINT,
+    {
+      grant_type: 'authorization_code',
+      code,
+      code_verifier: codeVerifier,
+      client_id: APP_KEY,
+      client_secret: APP_SECRET,
+      redirect_uri: redirectUri || REDIRECT_URI,
+    },
+    'Dropbox',
+  );
 
   let account = null;
   try {
@@ -93,16 +74,13 @@ async function exchangeCode({ code, codeVerifier, redirectUri }) {
 
 // refresh-token → fresh access token (Dropbox does not rotate the refresh token).
 async function refresh({ refreshToken }) {
-  const body = await postToken({
-    grant_type: 'refresh_token',
-    refresh_token: refreshToken,
-    client_id: APP_KEY,
-    client_secret: APP_SECRET,
+  return sharedRefresh({
+    endpoint: TOKEN_ENDPOINT,
+    refreshToken,
+    clientId: APP_KEY,
+    clientSecret: APP_SECRET,
+    errorLabel: 'Dropbox',
   });
-  return {
-    accessToken: body.access_token,
-    expiresIn: body.expires_in || null,
-  };
 }
 
 // Map an SDK/HTTP error to a friendly CloudError the UI can branch on.
@@ -120,26 +98,6 @@ function classifyUploadError(err) {
     return new CloudError('quota', 'Not enough space in your Dropbox for this file.');
   }
   return new CloudError('upload', `Dropbox upload failed: ${summary || err?.message || 'unknown'}`);
-}
-
-// Retry a single chunk request on transient (5xx/network) failures only; auth
-// and quota errors are terminal and must surface immediately.
-async function withRetry(fn, { signal }) {
-  const MAX = 3;
-  let lastErr;
-  for (let attempt = 1; attempt <= MAX; attempt++) {
-    if (signal?.aborted) throw new CloudError('aborted', 'Upload cancelled');
-    try {
-      return await fn();
-    } catch (err) {
-      const status = err?.status;
-      const transient = !status || status >= 500;
-      lastErr = err;
-      if (!transient || attempt === MAX) throw err;
-      await new Promise((r) => setTimeout(r, 500 * 2 ** (attempt - 1)));
-    }
-  }
-  throw lastErr;
 }
 
 // Upload a single file to the app folder, streaming from disk in CHUNK_SIZE
@@ -229,5 +187,4 @@ module.exports = {
   exchangeCode,
   refresh,
   upload,
-  CloudError,
 };

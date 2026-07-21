@@ -1,4 +1,5 @@
 const fs = require('node:fs');
+const { CloudError, postToken, refresh: sharedRefresh, withRetry } = require('./shared');
 
 // --- Google Drive "Move to cloud" provider --------------------------------
 // Implements the same CloudProvider shape as dropbox.js, consumed by
@@ -39,43 +40,21 @@ function getPublicConfig() {
   return { clientId: CLIENT_ID, redirectUri: REDIRECT_URI };
 }
 
-// A CloudError carries a machine-readable `code` so the route/UI can react
-// (e.g. quota → offer "download instead", auth → prompt reconnect). `status`
-// (when set) is the originating HTTP status, used to decide retry-ability.
-class CloudError extends Error {
-  constructor(code, message, status) {
-    super(message);
-    this.code = code;
-    this.status = status;
-  }
-}
-
-async function postToken(params) {
-  const res = await fetch(TOKEN_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams(params).toString(),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    // Never log the code/verifier/token; only the opaque Google error slug.
-    const slug = body.error_description || body.error || `HTTP ${res.status}`;
-    throw new CloudError('oauth', `Google token exchange failed: ${slug}`);
-  }
-  return body;
-}
-
 // authorization-code → tokens. Uses PKCE (code_verifier) AND the client secret;
 // Google's "web" client accepts both for a confidential client.
 async function exchangeCode({ code, codeVerifier, redirectUri }) {
-  const body = await postToken({
-    grant_type: 'authorization_code',
-    code,
-    code_verifier: codeVerifier,
-    client_id: CLIENT_ID,
-    client_secret: CLIENT_SECRET,
-    redirect_uri: redirectUri || REDIRECT_URI,
-  });
+  const body = await postToken(
+    TOKEN_ENDPOINT,
+    {
+      grant_type: 'authorization_code',
+      code,
+      code_verifier: codeVerifier,
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+      redirect_uri: redirectUri || REDIRECT_URI,
+    },
+    'Google',
+  );
 
   return {
     accessToken: body.access_token,
@@ -89,16 +68,13 @@ async function exchangeCode({ code, codeVerifier, redirectUri }) {
 
 // refresh-token → fresh access token (Google does not rotate the refresh token).
 async function refresh({ refreshToken }) {
-  const body = await postToken({
-    grant_type: 'refresh_token',
-    refresh_token: refreshToken,
-    client_id: CLIENT_ID,
-    client_secret: CLIENT_SECRET,
+  return sharedRefresh({
+    endpoint: TOKEN_ENDPOINT,
+    refreshToken,
+    clientId: CLIENT_ID,
+    clientSecret: CLIENT_SECRET,
+    errorLabel: 'Google',
   });
-  return {
-    accessToken: body.access_token,
-    expiresIn: body.expires_in || null,
-  };
 }
 
 // Pull a machine-readable reason out of a Google Drive JSON error body.
@@ -125,32 +101,6 @@ async function driveError(res) {
     `Google Drive upload failed: ${reason || body?.error?.message || `HTTP ${status}`}`,
     status,
   );
-}
-
-// Retry a request on transient (5xx / network) failures only; auth and quota
-// errors are terminal and must surface immediately (mirrors dropbox.js).
-async function withRetry(fn, { signal }) {
-  const MAX = 3;
-  let lastErr;
-  for (let attempt = 1; attempt <= MAX; attempt++) {
-    if (signal?.aborted) throw new CloudError('aborted', 'Upload cancelled');
-    try {
-      return await fn();
-    } catch (err) {
-      // A cancelled upload is terminal — surface it immediately as a classified
-      // CloudError rather than retrying the raw fetch AbortError (a DOMException
-      // with no `.status`, which would otherwise look transient).
-      if (signal?.aborted || err?.name === 'AbortError' || err?.code === 'aborted') {
-        throw err instanceof CloudError ? err : new CloudError('aborted', 'Upload cancelled');
-      }
-      const status = err?.status;
-      const transient = !status || status >= 500; // no status → network throw
-      lastErr = err;
-      if (!transient || attempt === MAX) throw err;
-      await new Promise((r) => setTimeout(r, 500 * 2 ** (attempt - 1)));
-    }
-  }
-  throw lastErr;
 }
 
 // Find the app's "Tubekeep" folder in My Drive, creating it if absent.
@@ -289,5 +239,4 @@ module.exports = {
   exchangeCode,
   refresh,
   upload,
-  CloudError,
 };
