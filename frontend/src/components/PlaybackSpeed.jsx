@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { usePlayer } from '../context/usePlayer'
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
@@ -14,6 +14,7 @@ function PlaybackSpeed() {
   const ref = useRef(null)
   const triggerRef = useRef(null)
   const optionRefs = useRef([])
+  const menuId = useId()
 
   // Shared by both outside-interaction effects below.
   const isOutside = useCallback((target) => ref.current && !ref.current.contains(target), [])
@@ -59,7 +60,7 @@ function PlaybackSpeed() {
 
   const onTriggerClick = () => {
     if (open) {
-      setOpen(false)
+      closeAndReturnFocus()
       return
     }
     const selectedIndex = SPEEDS.indexOf(playbackRate)
@@ -110,6 +111,7 @@ function PlaybackSpeed() {
         title="Playback speed"
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
         className="flex items-center gap-1 bg-black/60 text-white rounded-full font-semibold text-[12.5px] px-3 py-1.5 backdrop-blur-sm hover:bg-black/75 active:scale-95 transition-all"
       >
         <span className="material-symbols-outlined text-[16px]">speed</span>
@@ -117,6 +119,7 @@ function PlaybackSpeed() {
       </button>
       {open ? (
         <div
+          id={menuId}
           role="menu"
           aria-label="Playback speed"
           onKeyDown={onMenuKeyDown}
