@@ -52,6 +52,15 @@ const countsTowardUsage = (r) => !r.expired && !r.moved && r.status !== 'failed'
 const SUPERSEDABLE_SQL = "NOT moved AND coalesce(status, '') <> 'downloading'";
 const isSupersedable = (r) => !r.moved && r.status !== 'downloading';
 
+// Whether this row's media is actually on our disk right now — i.e. whether a
+// `filename` is worth handing out. False while still downloading, after a
+// failure, once moved to the user's own cloud, and once expired. Lives here with
+// the other lifecycle predicates so a new terminal status is handled in one file.
+// Unlike its two neighbours (raw DB rows only) this is safe on EITHER shape: the
+// three fields it reads keep their names through toApiRow, and `moved` stays
+// truthy there as `moved_info || {}`. Its caller passes a toApiRow output.
+const hasLocalMedia = (r) => r.status === 'complete' && !r.moved && !r.expired;
+
 // Postgres-backed implementation over a `query(text, params)` function (db.js).
 function createStore(query) {
   return {
@@ -361,4 +370,4 @@ function createMemoryStore({ rows = [] } = {}) {
   };
 }
 
-module.exports = { createStore, createMemoryStore, toApiRow };
+module.exports = { createStore, createMemoryStore, toApiRow, hasLocalMedia };

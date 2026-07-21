@@ -10,6 +10,7 @@ const {
 } = require('../utils/storage');
 const { cancelJob } = require('../services/downloadManager');
 const { rateLimit } = require('../utils/rateLimit');
+const { hasLocalMedia } = require('../services/downloadsStore');
 
 // Public per-item metadata (0XC-112): project a store row down to only what a
 // share-link recipient needs, never an owner detail (no user_id, email, url,
@@ -20,7 +21,7 @@ const { rateLimit } = require('../utils/rateLimit');
 // nothing new; it just tells the player "not playable here" without
 // distinguishing *why* for a non-owner.
 function toPublicMeta(row) {
-  const ready = row.status === 'complete' && !row.moved && !row.expired;
+  const ready = hasLocalMedia(row);
   return {
     downloadId: row.downloadId,
     title: row.title,
