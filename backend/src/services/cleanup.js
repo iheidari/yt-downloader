@@ -135,11 +135,20 @@ function stopCleanupScheduler() {
 }
 
 // Standalone `npm run cleanup`: filesystem only, driven by directory mtime —
-// there's no store (and so no `kept` to read), so this is a partial sweep;
-// the running server's hourly sweep (which has both) is what reconciles the
-// history rows and honors `kept`.
+// there's no store (so no `kept` to read) and no job registry (so no
+// `runningDownloadIds()` either, since that only knows about jobs in *this*
+// process — this is always a separate, one-shot process from the running
+// server). With neither guard available, use the same generous window the
+// old dedicated orphan-directory sweep used (`STALE_DOWNLOADING_MS`, 6h)
+// instead of the server sweep's much tighter `MAX_FILE_AGE_HOURS` (1h): the
+// tight window is only safe *because* the running server's `runCleanup` has
+// `runningDownloadIds()` to fall back on, and a lone CLI invocation does not.
+// This is still a partial sweep — the running server's hourly sweep is what
+// reconciles the history rows and honors `kept` — but it no longer risks
+// deleting a live server's in-progress download out from under it just for
+// being mtime-quiet within the first hour.
 if (require.main === module) {
-  const result = cleanupOldDownloads(MAX_FILE_AGE_HOURS);
+  const result = cleanupOldDownloads(STALE_DOWNLOADING_MS / (60 * 60 * 1000));
   console.log('Manual cleanup result:', result);
   process.exit(0);
 }

@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { execFileSync } = require('node:child_process');
 
 const { runCleanup } = require('./cleanup');
 const { createMemoryStore } = require('./downloadsStore');
@@ -100,6 +101,35 @@ test('the store-less path (standalone `npm run cleanup`) still runs and expires 
   const result = await runCleanup(); // no store argument — must not throw
 
   assert.ok(result.expiredIds.includes(id));
+  assert.equal(fs.existsSync(dir), false);
+});
+
+// --- the standalone `npm run cleanup` CLI (a real, separate process) -------
+// A one-shot `node src/services/cleanup.js` invocation has neither a store
+// (no `keptIds()`) nor a job registry (no `runningDownloadIds()` — that only
+// knows about jobs in *its own* process). With neither guard, it must use a
+// wider age threshold than the server sweep's 1h, or a live download running
+// in some OTHER process (the actual server) could have its directory deleted
+// out from under it for looking merely mtime-quiet within the first hour.
+
+test('the standalone CLI does not touch a 2h-old directory — inside the server sweep window but not its own', () => {
+  const { dir } = makeOldDir(); // 2h old, per makeOldDir's fixed age
+
+  execFileSync('node', ['src/services/cleanup.js'], { cwd: path.join(__dirname, '../..') });
+
+  assert.equal(fs.existsSync(dir), true);
+});
+
+test('the standalone CLI still reclaims a directory old enough to be unambiguous debris (7h)', () => {
+  const id = crypto.randomUUID();
+  const dir = ensureDownloadDir(id);
+  created.push(dir);
+  fs.writeFileSync(path.join(dir, 'video.mp4'), 'x');
+  const when = new Date(Date.now() - 7 * ONE_HOUR_MS);
+  fs.utimesSync(dir, when, when);
+
+  execFileSync('node', ['src/services/cleanup.js'], { cwd: path.join(__dirname, '../..') });
+
   assert.equal(fs.existsSync(dir), false);
 });
 

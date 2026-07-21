@@ -62,12 +62,25 @@ test('never touches a download whose id is in skipIds, however old (kept / activ
   assert.equal(fs.existsSync(kept.dir), true);
 });
 
-test('an empty (already-drained) old directory is left for something else to reclaim, not re-expired', () => {
+test('an old, empty directory is reclaimed too — this is the replacement for the old orphan-dir sweep', () => {
+  // A directory `ensureDownloadDir` created for a download that died before
+  // any bytes landed looks exactly like this: present, empty, aging. Nothing
+  // else in the codebase removes it, so this sweep must.
   const emptyOld = makeDir({ ageMs: 2 * ONE_HOUR_MS, empty: true });
 
   const result = cleanupOldDownloads(1);
 
-  assert.equal(result.expiredIds.includes(emptyOld.id), false);
+  assert.ok(result.expiredIds.includes(emptyOld.id));
+  assert.equal(fs.existsSync(emptyOld.dir), false);
+});
+
+test('a fresh empty directory is left alone — it may be a download that just started', () => {
+  const emptyFresh = makeDir({ empty: true });
+
+  const result = cleanupOldDownloads(1);
+
+  assert.equal(result.expiredIds.includes(emptyFresh.id), false);
+  assert.equal(fs.existsSync(emptyFresh.dir), true);
 });
 
 test('a stray metadata.json left over from before the deploy is treated like any other file — ignored, removed with the directory', () => {

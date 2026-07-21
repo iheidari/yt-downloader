@@ -193,12 +193,19 @@ function markMoved(downloadId) {
 
 // Age-based expiry over a set of on-disk directories (default: a fresh scan).
 // Age is the directory's `mtimeMs` — the closest filesystem-only stand-in for
-// "last touched" now that there's no stored `createdAt` to read. A directory
-// with zero files has nothing to reclaim; `skipIds` (downloads currently
-// `kept`, and/or actively running in *this* process — see downloadManager's
-// `runningDownloadIds`) is never touched regardless of age. Everything else —
-// which downloads exist, whether one is `kept`, whether it's still running —
-// is the caller's job to know; this function only ever deletes directories.
+// "last touched" now that there's no stored `createdAt` to read. `skipIds`
+// (downloads currently `kept`, and/or actively running in *this* process —
+// see downloadManager's `runningDownloadIds`) is never touched regardless of
+// age. Everything else — which downloads exist, whether one is `kept`,
+// whether it's still running — is the caller's job to know; this function
+// only ever deletes directories.
+//
+// This deliberately does NOT skip empty directories: one with no files is
+// exactly what a download that died before any bytes landed looks like
+// (`ensureDownloadDir` ran, the job never got further), and reclaiming those
+// once they go stale is this function's replacement for the old, separate
+// `cleanupOrphanDirs` sweep — folded in here rather than kept as a second
+// pass, since both are now just "how old is this directory".
 function cleanupOldDownloads(maxAgeHours = 24, { downloads = listDownloadDirs(), skipIds } = {}) {
   const now = Date.now();
   const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
@@ -207,7 +214,7 @@ function cleanupOldDownloads(maxAgeHours = 24, { downloads = listDownloadDirs(),
   const errors = [];
 
   for (const dir of downloads) {
-    if (!hasMedia(dir) || skip.has(dir.downloadId)) continue;
+    if (skip.has(dir.downloadId)) continue;
 
     try {
       if (now - dir.mtimeMs > maxAgeMs) {
