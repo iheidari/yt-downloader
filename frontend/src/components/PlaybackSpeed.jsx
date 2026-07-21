@@ -23,6 +23,19 @@ function PlaybackSpeed() {
     return () => document.removeEventListener('pointerdown', onDown)
   }, [open])
 
+  // Tabbing/shift-tabbing focus out of the trigger+menu group must also close the menu —
+  // otherwise the panel (and its stale aria-expanded="true") stays on screen after focus
+  // has moved elsewhere. Mirrors the pointerdown-outside effect above, but keyed off focus
+  // moving rather than a pointer press, so it catches the keyboard-only case too.
+  useEffect(() => {
+    if (!open) return
+    const onFocusIn = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('focusin', onFocusIn)
+    return () => document.removeEventListener('focusin', onFocusIn)
+  }, [open])
+
   // Roving focus: move DOM focus onto whichever option is active whenever the
   // menu opens or the active option changes via arrow/Home/End keys.
   useEffect(() => {
