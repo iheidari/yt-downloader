@@ -77,3 +77,20 @@ test('requests with no forwarding headers (local dev) bucket per socket address'
   assert.equal(r2.status, 200);
   assert.equal(r3.status, 429);
 });
+
+test('a throttled request gets a JSON 429 body and a sane Retry-After header', async () => {
+  const client = '203.0.113.40';
+  await fetch(`${base}/limited`, { headers: { 'X-Forwarded-For': client } });
+  await fetch(`${base}/limited`, { headers: { 'X-Forwarded-For': client } });
+  const blocked = await fetch(`${base}/limited`, { headers: { 'X-Forwarded-For': client } });
+
+  assert.equal(blocked.status, 429);
+  assert.deepEqual(await blocked.json(), { success: false, error: 'Too many requests' });
+
+  const retryAfter = Number(blocked.headers.get('retry-after'));
+  assert.ok(Number.isInteger(retryAfter), 'Retry-After must be present and integer-valued');
+  assert.ok(
+    retryAfter > 0 && retryAfter <= 60,
+    `Retry-After (${retryAfter}) should fall within the 60s window`,
+  );
+});
