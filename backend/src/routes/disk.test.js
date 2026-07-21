@@ -1,10 +1,11 @@
 const { test, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const express = require('express');
 
 const { createDiskRouter } = require('./disk');
 const { createMemoryStore } = require('../services/downloadsStore');
-const { DISK_SIZE_MULTIPLIER, DISK_HEADROOM_BYTES } = require('../utils/storage');
+const { DISK_SIZE_MULTIPLIER, DISK_HEADROOM_BYTES, downloadsDir } = require('../utils/storage');
 
 const GB = 1024 ** 3;
 const USER = '11111111-1111-1111-1111-111111111111';
@@ -18,7 +19,13 @@ let user;
 // Mount the router behind a stub session so the per-user quota block is
 // exercised without Postgres. getDiskUsage() runs for real against the actual
 // filesystem — the machine-dependent numbers are asserted by shape only.
+// server.js creates downloadsDir on boot, but this test mounts the router
+// directly, so a fresh checkout with no prior download (and thus no
+// downloads/ directory yet) would otherwise 404/500 statfs — ensure it here
+// rather than relying on another test file's side effect to have created it.
 before(async () => {
+  fs.mkdirSync(downloadsDir, { recursive: true });
+
   const app = express();
   app.use(
     '/api/disk',
