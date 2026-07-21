@@ -78,7 +78,7 @@ test('a `kept` row belonging to a different user still protects the directory �
   assert.equal(fs.existsSync(dir), true);
 });
 
-test('a store.keptIds() failure degrades to an un-protected sweep rather than throwing', async () => {
+test('a store.keptIds() failure fails CLOSED — nothing is age-expired this sweep, not even the non-kept', async () => {
   const { id, dir } = makeOldDir();
   const brokenStore = {
     async keptIds() {
@@ -88,14 +88,22 @@ test('a store.keptIds() failure degrades to an un-protected sweep rather than th
 
   const result = await runCleanup(brokenStore);
 
-  // Nothing crashed, and with no usable kept list the directory ages out like
-  // any other — fails safe toward cleanup, not toward silently keeping
-  // everything forever.
-  assert.ok(result.expiredIds.includes(id));
-  assert.equal(fs.existsSync(dir), false);
+  // Deleting a `kept` download's media is irreversible; without a reliable
+  // kept list there's no way to tell which directories are safe to age out,
+  // so none of them are touched this pass — not just the ones that might be
+  // kept. The next successful sweep (an hour later) catches up.
+  assert.equal(result.expiredIds.includes(id), false);
+  assert.equal(fs.existsSync(dir), true);
+  assert.equal(result.errors.length, 0);
 });
 
-test('the store-less path (standalone `npm run cleanup`) still runs and expires by directory age alone', async () => {
+test('runCleanup() called with no store at all still expires by directory age — only a *failing* store fails closed, not a missing one', async () => {
+  // This is NOT the standalone `npm run cleanup` CLI (that entry point calls
+  // cleanupOldDownloads directly — see the CLI tests below); it's the
+  // defensive no-store path runCleanup() itself supports (startCleanupScheduler
+  // called without a store, as in some unit tests). Since keptIds() is never
+  // attempted here, canExpireByAge stays true — this is a different case from
+  // the fail-closed one above, where a store IS present but its query throws.
   const { id, dir } = makeOldDir();
 
   const result = await runCleanup(); // no store argument — must not throw

@@ -64,17 +64,31 @@ async function runCleanup(store = null) {
 
   // Never age out a directory a job in *this* process is actively writing to.
   // With a store, also spare anything flagged `kept` — the DB is the only
-  // remaining record of that, so a directory can't tell on its own.
+  // remaining record of that, so a directory can't tell on its own. Unlike
+  // the pre-0XC-109 metadata.json mirror, `kept` protection now depends on
+  // this query succeeding *every* sweep, not just at toggle time — so a
+  // failure here fails CLOSED (skip age-based expiry entirely this pass)
+  // rather than open. Deleting a `kept` download's media is irreversible; a
+  // transient DB hiccup delaying a disk reclaim by an hour is not. Same
+  // reasoning as the per-user quota check's fail-closed behavior in
+  // routes/download.js.
   const skipIds = new Set(runningDownloadIds());
+  let canExpireByAge = true;
   if (store) {
     try {
       for (const id of await store.keptIds()) skipIds.add(id);
     } catch (err) {
-      console.error('⚠️ Could not load kept downloads:', err.message);
+      console.error(
+        '⚠️ Could not load kept downloads — skipping age-based expiry this sweep to avoid deleting one:',
+        err.message,
+      );
+      canExpireByAge = false;
     }
   }
 
-  const result = cleanupOldDownloads(MAX_FILE_AGE_HOURS, { downloads, skipIds });
+  const result = canExpireByAge
+    ? cleanupOldDownloads(MAX_FILE_AGE_HOURS, { downloads, skipIds })
+    : { expired: 0, expiredIds: [], errors: [] };
 
   if (result.expired > 0) {
     console.log(`✅ Expired ${result.expired} old downloads: ${result.expiredIds.join(', ')}`);
