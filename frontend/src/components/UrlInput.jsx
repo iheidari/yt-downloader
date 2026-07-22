@@ -10,6 +10,7 @@ function UrlInput({ onSubmit, loading }) {
   const [url, setUrl] = useState('')
   const empty = !url.trim()
   const inactive = loading || empty
+  const showEmptyHint = empty && !loading
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -53,7 +54,7 @@ function UrlInput({ onSubmit, loading }) {
               if (inactive) e.preventDefault()
             }}
             aria-disabled={inactive}
-            aria-describedby={empty && !loading ? NO_URL_ID : undefined}
+            aria-describedby={showEmptyHint ? NO_URL_ID : undefined}
             className={`flex items-center gap-2 bg-fill text-on-fill font-label-md text-[15px] px-6 py-3.5 rounded-lg transition-all shrink-0 ${
               inactive ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90 active:scale-[0.98]'
             }`}
@@ -72,7 +73,7 @@ function UrlInput({ onSubmit, loading }) {
               </>
             )}
           </button>
-          {empty && !loading ? (
+          {showEmptyHint ? (
             <span id={NO_URL_ID} className="sr-only">
               Paste a video URL first
             </span>
