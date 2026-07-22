@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useCloudMove } from '../hooks/useCloudMove'
+import { useDismissableMenu } from '../hooks/useDismissableMenu'
 import { FILE_EXPIRY_MS } from '../lib/media'
 
 // A move must have at least this much runway before the file's expiry, so it
@@ -23,11 +24,19 @@ function MoveToCloud({ download, downloadHref, onMoved }) {
   const { providers, phase, progress, error, activeProvider, move } = useCloudMove(download, {
     onMoved,
   })
-  const [menuOpen, setMenuOpen] = useState(false)
   const [, setTick] = useState(0)
-  const rootRef = useRef(null)
-  const triggerRef = useRef(null)
-  const menuRef = useRef(null)
+  const {
+    open,
+    rootRef,
+    triggerRef,
+    menuId,
+    openAt,
+    close,
+    closeAndReturnFocus,
+    onTriggerKeyDown,
+    onMenuKeyDown,
+    getItemProps,
+  } = useDismissableMenu(providers?.length ?? 0)
 
   // Flip the button to "expiring soon" exactly when the runway crosses the
   // cutoff, without polling — schedule a single re-render at that moment.
@@ -38,28 +47,6 @@ function MoveToCloud({ download, downloadHref, onMoved }) {
     const timer = setTimeout(() => setTick((v) => v + 1), untilCutoff + 500)
     return () => clearTimeout(timer)
   }, [runway])
-
-  // Close the provider menu on outside click or Escape (returning focus to the
-  // trigger), and move focus into the menu when it opens so it's keyboard-usable.
-  useEffect(() => {
-    if (!menuOpen) return
-    const onDocClick = (e) => {
-      if (rootRef.current && !rootRef.current.contains(e.target)) setMenuOpen(false)
-    }
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        setMenuOpen(false)
-        triggerRef.current?.focus()
-      }
-    }
-    document.addEventListener('mousedown', onDocClick)
-    document.addEventListener('keydown', onKeyDown)
-    menuRef.current?.querySelector('button')?.focus()
-    return () => {
-      document.removeEventListener('mousedown', onDocClick)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [menuOpen])
 
   // Hidden until we know which providers are enabled (avoids a flash then
   // disappear), and when none are configured.
@@ -131,21 +118,29 @@ function MoveToCloud({ download, downloadHref, onMoved }) {
   }
 
   const busy = phase !== 'idle'
+  const hasMenu = providers.length > 1
   const PHASE_LABELS = { connecting: 'Connecting…', starting: 'Starting…', queued: 'Queued…' }
   const label =
     phase === 'uploading'
       ? `Uploading ${Math.round(progress)}%`
       : PHASE_LABELS[phase] || 'Move to cloud'
 
-  // One provider → move straight there; several → open the picker menu.
+  // One provider → move straight there; several → open/close the picker menu.
   const onButtonClick = () => {
     if (busy) return
-    if (providers.length === 1) move(providers[0].name)
-    else setMenuOpen((v) => !v)
+    if (!hasMenu) {
+      move(providers[0].name)
+      return
+    }
+    if (open) {
+      closeAndReturnFocus()
+      return
+    }
+    openAt(0)
   }
 
   const choose = (name) => {
-    setMenuOpen(false)
+    close()
     move(name)
   }
 
@@ -155,8 +150,11 @@ function MoveToCloud({ download, downloadHref, onMoved }) {
         ref={triggerRef}
         type="button"
         onClick={onButtonClick}
+        onKeyDown={hasMenu ? onTriggerKeyDown : undefined}
         disabled={busy}
-        aria-expanded={providers.length > 1 ? menuOpen : undefined}
+        aria-haspopup={hasMenu ? 'menu' : undefined}
+        aria-expanded={hasMenu ? open : undefined}
+        aria-controls={hasMenu && open ? menuId : undefined}
         className="flex items-center justify-center gap-1 text-primary font-label-sm text-label-sm whitespace-nowrap border border-primary px-3 py-1 rounded-full hover:bg-primary/5 transition-colors active:scale-95 disabled:opacity-70 disabled:cursor-default disabled:active:scale-100"
       >
         <span
@@ -169,27 +167,36 @@ function MoveToCloud({ download, downloadHref, onMoved }) {
         {label}
       </button>
 
-      {menuOpen && !busy && (
+      {hasMenu && open && !busy && (
         <div
-          ref={menuRef}
+          id={menuId}
+          role="menu"
+          aria-label="Cloud provider"
+          onKeyDown={onMenuKeyDown}
           className="absolute top-full left-0 right-0 mt-1 z-10 bg-surface-container-high border border-outline-variant rounded-lg shadow-lg overflow-hidden"
         >
-          {providers.map((p) => (
-            <button
-              key={p.name}
-              type="button"
-              onClick={() => choose(p.name)}
-              className="flex items-center gap-2 w-full px-3 py-2 text-on-surface font-label-sm text-label-sm hover:bg-primary/10 transition-colors text-left"
-            >
-              <span
-                className="material-symbols-outlined text-[18px] text-primary"
-                aria-hidden="true"
+          {providers.map((p, index) => {
+            const { ref, tabIndex } = getItemProps(index)
+            return (
+              <button
+                key={p.name}
+                ref={ref}
+                type="button"
+                role="menuitem"
+                tabIndex={tabIndex}
+                onClick={() => choose(p.name)}
+                className="flex items-center gap-2 w-full px-3 py-2 text-on-surface font-label-sm text-label-sm hover:bg-primary/10 transition-colors text-left"
               >
-                {p.icon}
-              </span>
-              {p.label}
-            </button>
-          ))}
+                <span
+                  className="material-symbols-outlined text-[18px] text-primary"
+                  aria-hidden="true"
+                >
+                  {p.icon}
+                </span>
+                {p.label}
+              </button>
+            )
+          })}
         </div>
       )}
 
