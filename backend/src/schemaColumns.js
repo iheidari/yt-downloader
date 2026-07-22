@@ -9,6 +9,10 @@ const ALTER_ADD_COLUMN_RE =
 
 // Table-level constraint lines start with one of these instead of a column
 // name — e.g. `PRIMARY KEY (a, b)`, `UNIQUE (x)`, `FOREIGN KEY (...) REFERENCES …`.
+// Matching on the leading word alone isn't enough: a column literally named
+// `unique` or `check` would collide, so `isTableConstraintEntry` below also
+// checks what follows before treating the entry as a constraint rather than
+// a column.
 const TABLE_CONSTRAINT_KEYWORDS = new Set([
   'primary',
   'unique',
@@ -18,6 +22,32 @@ const TABLE_CONSTRAINT_KEYWORDS = new Set([
   'exclude',
   'like',
 ]);
+
+// `word` is already confirmed to be one of TABLE_CONSTRAINT_KEYWORDS; `rest`
+// is whatever follows it on the entry. Returns whether this really reads as
+// the table-level constraint clause (vs. a column that happens to be named
+// after the keyword, e.g. `unique boolean`).
+function isTableConstraintEntry(word, rest) {
+  const trimmedRest = rest.trim();
+  switch (word) {
+    case 'primary':
+    case 'foreign':
+      return /^key\b/i.test(trimmedRest);
+    case 'unique':
+    case 'check':
+      return trimmedRest.startsWith('(');
+    case 'exclude':
+      return trimmedRest.startsWith('(') || /^using\b/i.test(trimmedRest);
+    case 'constraint':
+      // `CONSTRAINT <name> PRIMARY KEY|UNIQUE|CHECK|FOREIGN KEY|EXCLUDE …` —
+      // look for the real constraint keyword after the constraint's name.
+      return /\b(primary|unique|check|foreign|exclude)\b/i.test(trimmedRest);
+    case 'like':
+      return true;
+    default:
+      return false;
+  }
+}
 
 function stripComments(sql) {
   return sql.replace(/--.*$/gm, '');
@@ -82,7 +112,11 @@ function columnNameFromEntry(entry) {
   if (!trimmed) return null;
   const match = trimmed.match(/^"?(\w+)"?/);
   if (!match) return null;
-  if (TABLE_CONSTRAINT_KEYWORDS.has(match[1].toLowerCase())) return null;
+  const word = match[1].toLowerCase();
+  if (TABLE_CONSTRAINT_KEYWORDS.has(word)) {
+    const rest = trimmed.slice(match[0].length);
+    if (isTableConstraintEntry(word, rest)) return null;
+  }
   return match[1];
 }
 
