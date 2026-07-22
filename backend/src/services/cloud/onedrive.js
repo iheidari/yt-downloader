@@ -138,6 +138,12 @@ async function withRetry(fn, { signal }) {
       if (signal?.aborted || err?.name === 'AbortError' || err?.code === 'aborted') {
         throw err instanceof CloudError ? err : new CloudError('aborted', 'Upload cancelled');
       }
+      // auth/quota are already-classified terminal outcomes — never retry them,
+      // even though Graph's quota status (507) is >= 500 and would otherwise
+      // look transient to the generic status check below.
+      if (err instanceof CloudError && (err.code === 'auth' || err.code === 'quota')) {
+        throw err;
+      }
       const status = err?.status;
       const transient = !status || status >= 500; // no status → network throw
       lastErr = err;
@@ -161,7 +167,12 @@ async function startSession({ accessToken, fileName, signal }) {
   });
   if (!res.ok) await graphError(res);
   const body = await res.json();
-  if (!body.uploadUrl) throw new CloudError('upload', 'OneDrive did not return an upload session');
+  // The request itself succeeded (res.ok) but the body is malformed — pass the
+  // (non-5xx) status through so withRetry treats this as terminal rather than
+  // retrying a response that will never contain an uploadUrl.
+  if (!body.uploadUrl) {
+    throw new CloudError('upload', 'OneDrive did not return an upload session', res.status);
+  }
   return body.uploadUrl;
 }
 
