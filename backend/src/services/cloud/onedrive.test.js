@@ -286,6 +286,10 @@ function mockUploadSessionError(response, copies = 1) {
   return mockFetchQueue(Array(copies).fill(response));
 }
 
+// Shared args for the error-classification tests below: none of them care
+// about the file's identity, only how upload() reacts to the session's error.
+const UPLOAD_ARGS = { accessToken: 'at', filePath: '/tmp/whatever', fileName: 'f.mp4', size: 10 };
+
 test('error classification: a 401 response classifies as CloudError code "auth"', async () => {
   mockUploadSessionError(
     fakeResponse({
@@ -295,13 +299,7 @@ test('error classification: a 401 response classifies as CloudError code "auth"'
     }),
   );
   await assert.rejects(
-    () =>
-      onedrive.upload({
-        accessToken: 'at',
-        filePath: '/tmp/whatever',
-        fileName: 'f.mp4',
-        size: 10,
-      }),
+    () => onedrive.upload(UPLOAD_ARGS),
     (err) => {
       assert.ok(err instanceof onedrive.CloudError);
       assert.strictEqual(err.code, 'auth');
@@ -321,13 +319,7 @@ test('error classification: a 507 response classifies as CloudError code "quota"
     3,
   );
   await assert.rejects(
-    () =>
-      onedrive.upload({
-        accessToken: 'at',
-        filePath: '/tmp/whatever',
-        fileName: 'f.mp4',
-        size: 10,
-      }),
+    () => onedrive.upload(UPLOAD_ARGS),
     (err) => {
       assert.strictEqual(err.code, 'quota');
       assert.strictEqual(err.status, 507);
@@ -341,13 +333,7 @@ test('error classification: a non-507 response whose reason matches /quota/i als
     fakeResponse({ ok: false, status: 403, json: { error: { code: 'quotaLimitReached' } } }),
   );
   await assert.rejects(
-    () =>
-      onedrive.upload({
-        accessToken: 'at',
-        filePath: '/tmp/whatever',
-        fileName: 'f.mp4',
-        size: 10,
-      }),
+    () => onedrive.upload(UPLOAD_ARGS),
     (err) => {
       assert.strictEqual(err.code, 'quota');
       assert.strictEqual(err.status, 403);
@@ -361,13 +347,7 @@ test('error classification: anything else classifies as CloudError code "upload"
     fakeResponse({ ok: false, status: 400, json: { error: { message: 'Bad request thing' } } }),
   );
   await assert.rejects(
-    () =>
-      onedrive.upload({
-        accessToken: 'at',
-        filePath: '/tmp/whatever',
-        fileName: 'f.mp4',
-        size: 10,
-      }),
+    () => onedrive.upload(UPLOAD_ARGS),
     (err) => {
       assert.strictEqual(err.code, 'upload');
       assert.strictEqual(err.status, 400);
