@@ -193,8 +193,7 @@ and **[onedrive-setup.md](./onedrive-setup.md)** for how to obtain these.
     `/api/cloud` with per-IP rate limiting.
 - **Frontend**
   - `lib/cloud.js` — generic, data-driven by a per-provider table (Dropbox, Google Drive,
-    OneDrive): PKCE
-    (Web Crypto), popup connect, per-provider sessionStorage token store, refresh-aware
+    OneDrive): PKCE (Web Crypto), popup connect, per-provider sessionStorage token store, refresh-aware
     `getFreshAccessToken(provider)`, `getEnabledProviders()`. Config resolved from
     `/api/cloud/providers` (VITE_ vars optional overrides).
   - `pages/OAuthCallbackPage.jsx` + `/oauth/callback` route (standalone, outside the app shell).
