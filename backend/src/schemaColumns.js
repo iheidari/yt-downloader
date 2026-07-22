@@ -12,7 +12,14 @@ const ALTER_ADD_COLUMN_RE =
 // Matching on the leading word alone isn't enough: a column literally named
 // `unique` or `check` would collide, so `isTableConstraintEntry` below also
 // checks what follows before treating the entry as a constraint rather than
-// a column.
+// a column. `LIKE other_table` is deliberately not in this set: unlike every
+// other case here, "is the next token a table name?" can't be distinguished
+// from "is the next token a type name?" without knowing real Postgres types,
+// and schema.sql has never used a table-level LIKE clause. If one is ever
+// added, its "like" is instead parsed as a phantom required column, which
+// fails the boot-time assertion loudly (the same "fail loudly" principle
+// parseSchemaColumns already applies below) rather than silently dropping a
+// same-named real column the way an unconditional match would.
 const TABLE_CONSTRAINT_KEYWORDS = new Set([
   'primary',
   'unique',
@@ -20,7 +27,6 @@ const TABLE_CONSTRAINT_KEYWORDS = new Set([
   'foreign',
   'constraint',
   'exclude',
-  'like',
 ]);
 
 // `word` is already confirmed to be one of TABLE_CONSTRAINT_KEYWORDS; `rest`
@@ -42,8 +48,6 @@ function isTableConstraintEntry(word, rest) {
       // `CONSTRAINT <name> PRIMARY KEY|UNIQUE|CHECK|FOREIGN KEY|EXCLUDE …` —
       // look for the real constraint keyword after the constraint's name.
       return /\b(primary|unique|check|foreign|exclude)\b/i.test(trimmedRest);
-    case 'like':
-      return true;
     default:
       return false;
   }
@@ -53,52 +57,46 @@ function stripComments(sql) {
   return sql.replace(/--.*$/gm, '');
 }
 
+// Advances a shared paren-depth/string-literal scan state by one character.
+// Both readBalancedParens and splitTopLevel need to track "are we inside a
+// nested paren?" and "are we inside a single-quoted string?" (so a comma or
+// paren in a DEFAULT value like `numeric(10,2)` or `'a,b(c)'` isn't mistaken
+// for real structure) — this is that one state machine, shared.
+function advanceScanState(state, char) {
+  if (state.inString) {
+    if (char === "'") state.inString = false;
+    return state;
+  }
+  if (char === "'") state.inString = true;
+  else if (char === '(') state.depth++;
+  else if (char === ')') state.depth--;
+  return state;
+}
+
 // Returns the substring between the '(' just consumed (at `openIndex`) and
-// its matching close, honoring nested parens (e.g. `numeric(10,2)`) and
-// single-quoted string literals (so a paren inside a DEFAULT string isn't
-// counted).
+// its matching close.
 function readBalancedParens(sql, openIndex) {
-  let depth = 1;
-  let inString = false;
+  const state = { depth: 1, inString: false };
   for (let i = openIndex; i < sql.length; i++) {
-    const char = sql[i];
-    if (inString) {
-      if (char === "'") inString = false;
-      continue;
-    }
-    if (char === "'") {
-      inString = true;
-    } else if (char === '(') {
-      depth++;
-    } else if (char === ')') {
-      depth--;
-      if (depth === 0) return sql.slice(openIndex, i);
-    }
+    advanceScanState(state, sql[i]);
+    if (state.depth === 0) return sql.slice(openIndex, i);
   }
   throw new Error('schema.sql parser: unbalanced parentheses in a CREATE TABLE body');
 }
 
 // Splits a CREATE TABLE body into its comma-separated column/constraint
 // entries, respecting nested parens and string literals so an internal
-// comma (`numeric(10,2)`, `DEFAULT 'a,b'`) never causes a false split.
+// comma never causes a false split.
 function splitTopLevel(body) {
   const parts = [];
-  let depth = 0;
-  let inString = false;
+  const state = { depth: 0, inString: false };
   let start = 0;
   for (let i = 0; i < body.length; i++) {
-    const char = body[i];
-    if (inString) {
-      if (char === "'") inString = false;
-      continue;
-    }
-    if (char === "'") {
-      inString = true;
-    } else if (char === '(') {
-      depth++;
-    } else if (char === ')') {
-      depth--;
-    } else if (char === ',' && depth === 0) {
+    // A comma never changes depth/inString itself, so checking state after
+    // advancing is equivalent to checking before — and lets one call site
+    // both update the state and test it.
+    advanceScanState(state, body[i]);
+    if (body[i] === ',' && state.depth === 0 && !state.inString) {
       parts.push(body.slice(start, i));
       start = i + 1;
     }
@@ -153,12 +151,14 @@ function parseSchemaColumns(sql) {
   }
 
   const result = {};
-  let totalColumns = 0;
   for (const [table, columns] of Object.entries(columnsByTable)) {
     result[table] = [...columns];
-    totalColumns += columns.size;
   }
-  if (totalColumns === 0) {
+  // addColumn() only ever creates a table's entry at the same moment it adds
+  // that table's first column, so an empty `result` here means the parser
+  // matched nothing at all across the whole file — fail loudly rather than
+  // pass vacuously.
+  if (Object.keys(result).length === 0) {
     throw new Error('schema.sql parser found zero columns — refusing to silently pass');
   }
   return result;

@@ -144,13 +144,14 @@ test('a column literally named after a table-level constraint keyword is still c
       "primary" text,
       "foreign" boolean,
       exclude boolean,
+      like boolean,
       PRIMARY KEY (id)
     );
   `;
   const columns = parseSchemaColumns(sql);
   assert.deepEqual(
     new Set(columns.t),
-    new Set(['id', 'check', 'unique', 'primary', 'foreign', 'exclude']),
+    new Set(['id', 'check', 'unique', 'primary', 'foreign', 'exclude', 'like']),
   );
 });
 
