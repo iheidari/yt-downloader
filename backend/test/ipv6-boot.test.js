@@ -6,13 +6,12 @@
 // YTDLP_FORCE_IPV4 must still reach all the way through boot.
 //
 // Spawn the real server as a child process (same pattern as schema-boot.test.js
-// / cors-env.test.js) and confirm both directions. The "is the probe really
-// skipped" claim is checked two ways: a coarse fast-boot timing sanity check,
-// and a direct, deterministic proof via a `net.connect`-spying preload script
-// (written into the scratch tmpDir below, not committed — it must not be
-// picked up as its own test file by node --test's directory-based discovery)
-// that the probe made zero connection attempts. See the comment on that test
-// for why the timing check alone isn't enough.
+// / cors-env.test.js) and confirm both directions: the skip is proven directly
+// via a `net.connect`-spying preload script (written into the scratch tmpDir
+// below, not committed — it must not be picked up as its own test file by
+// node --test's directory-based discovery) that the probe made zero connection
+// attempts — a boot-time sanity check alone can't tell "skipped" apart from
+// "ran and happened to resolve fast" (e.g. an immediate 'no-route' rejection).
 
 const { test, before, after } = require('node:test');
 const assert = require('node:assert');
@@ -80,18 +79,12 @@ function bootServer(extraEnv, execArgv = []) {
       stderr += chunk.toString();
     });
 
-    const started = Date.now();
     (async () => {
       for (let i = 0; i < 50; i++) {
         try {
           const res = await fetch(`${base}/health`);
           if (res.ok) {
-            resolve({
-              server,
-              stdout: () => stdout,
-              stderr: () => stderr,
-              elapsedMs: Date.now() - started,
-            });
+            resolve({ server, stdout: () => stdout, stderr: () => stderr });
             return;
           }
         } catch {
@@ -103,19 +96,6 @@ function bootServer(extraEnv, execArgv = []) {
     })();
   });
 }
-
-test('boots quickly with no YTDLP_FORCE_IPV4 set — the probe is skipped in NODE_ENV=test', async () => {
-  const { server, elapsedMs } = await bootServer({});
-  try {
-    // Skipping the probe means boot isn't gated on any network round-trip; a
-    // real (non-skipped) probe is bounded at ~2s by itself, so an unrelated
-    // regression that re-enabled probing in tests would push this well past a
-    // generous margin.
-    assert.ok(elapsedMs < 4000, `expected a fast boot with the probe skipped, took ${elapsedMs}ms`);
-  } finally {
-    server.kill('SIGKILL');
-  }
-});
 
 test('an explicit YTDLP_FORCE_IPV4=true reaches through boot and is logged', async () => {
   const { server, stdout } = await bootServer({ YTDLP_FORCE_IPV4: 'true' });

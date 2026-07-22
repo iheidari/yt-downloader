@@ -3,7 +3,12 @@ const net = require('node:net');
 // A public, reliably-listening IPv6 host: Google Public DNS also answers
 // DNS-over-TCP, so a plain TCP connect on port 53 works from any network with
 // real IPv6 connectivity — no DNS resolution of our own needed first (which
-// would add another network round-trip and its own failure modes).
+// would add another network round-trip and its own failure modes). This is a
+// proxy for "does yt-dlp's own IPv6 traffic get through", not a guarantee —
+// a network that black-holes only port 53 while leaving 443 open would
+// misclassify as blackholed (harmless: forces IPv4 needlessly), but a
+// route-level black hole (the actual failure mode this targets) affects every
+// port, so the reverse false-negative isn't a realistic concern.
 const PROBE_HOST = '2001:4860:4860::8888';
 const PROBE_PORT = 53;
 const PROBE_TIMEOUT_MS = 2000;
@@ -31,7 +36,12 @@ function probeIpv6Reachability({
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      socket.removeAllListeners?.();
+      // Deliberately NOT socket.removeAllListeners() here: an OS-delivered
+      // connection error can still land just after the timeout fires, and an
+      // 'error' event with zero listeners throws synchronously in Node —
+      // crashing the whole boot sequence over a single probe socket. The
+      // `once('error', ...)` below stays attached and self-removes after
+      // firing; `settled` makes a late, redundant call a no-op either way.
       socket.destroy?.();
       resolve(outcome);
     };
@@ -63,9 +73,16 @@ async function decideForceIpv4({
 } = {}) {
   const explicit = readExplicitForceIpv4(env);
   if (explicit !== undefined) {
-    if (explicit) {
-      console.log('🔧 yt-dlp: forcing IPv4 (YTDLP_FORCE_IPV4=true)');
-    }
+    // Log both directions, not just the forcing one: YTDLP_FORCE_IPV4 being
+    // *set at all* — including a typo'd or stray value, which reads the same
+    // as an intentional "false" — silently skips the probe below. Without a
+    // log line here, "auto-detect decided false" and "override forced false"
+    // are indistinguishable to an operator debugging a still-slow yt-dlp.
+    console.log(
+      explicit
+        ? '🔧 yt-dlp: forcing IPv4 (YTDLP_FORCE_IPV4 override)'
+        : '🔧 yt-dlp: not forcing IPv4 (YTDLP_FORCE_IPV4 override, skipping the boot probe)',
+    );
     return explicit;
   }
 

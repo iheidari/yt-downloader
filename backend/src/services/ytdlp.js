@@ -62,6 +62,13 @@ function isSupportedUrl(value) {
 // the resolved decision from `services/ipv6.js`: an explicit YTDLP_FORCE_IPV4
 // wins outright, otherwise a timeout-bounded probe auto-detects a black-holed
 // route (0XC-126) — so most operators never have to set the flag by hand.
+//
+// `setForceIpv4` must be called at most once, at boot, before `app.listen` —
+// never from a request handler or while downloads are in flight. It's a
+// plain module-level mutable, so a call after boot would apply to every
+// subsequent `runYtDlp` invocation process-wide, including a retry of an
+// already-in-progress download (`runDownloadWithRetry`) picking up a
+// different value between attempts of the *same* logical job.
 let forceIpv4 = process.env.YTDLP_FORCE_IPV4 === 'true';
 
 function setForceIpv4(value) {

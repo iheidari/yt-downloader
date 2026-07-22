@@ -223,9 +223,20 @@ async function ensureSchema() {
 // suite, which must reach no real network — the same reasoning as ensureSchema's
 // DATABASE_URL skip above, just keyed on NODE_ENV since there's no env var whose
 // mere presence signals "network available" the way DATABASE_URL does for Postgres.
+// This is a best-effort convenience, never a boot requirement — decideForceIpv4
+// already falls back to `false` internally rather than rejecting, but this
+// try/catch matches ensureSchema's defensive shape above in case that ever
+// changes, so a network hiccup here can never be what stops the server from
+// starting.
 async function ensureIpv4Decision() {
-  const forceIpv4 = await decideForceIpv4({ skipProbe: process.env.NODE_ENV === 'test' });
-  setForceIpv4(forceIpv4);
+  try {
+    const forceIpv4 = await decideForceIpv4({ skipProbe: process.env.NODE_ENV === 'test' });
+    setForceIpv4(forceIpv4);
+  } catch (err) {
+    console.warn(
+      `⚠️  IPv6 probe boot step failed unexpectedly (${err.message}) — leaving IPv4 unforced.`,
+    );
+  }
 }
 
 Promise.all([ensureSchema(), ensureIpv4Decision()]).then(() => {
