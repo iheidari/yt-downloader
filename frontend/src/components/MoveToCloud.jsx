@@ -31,7 +31,6 @@ function MoveToCloud({ download, downloadHref, onMoved }) {
     triggerRef,
     menuId,
     openAt,
-    close,
     closeAndReturnFocus,
     onTriggerKeyDown,
     onMenuKeyDown,
@@ -140,7 +139,12 @@ function MoveToCloud({ download, downloadHref, onMoved }) {
   }
 
   const choose = (name) => {
-    close()
+    // The clicked/keyboard-activated menuitem is about to unmount (the menu
+    // closes); return focus to the trigger synchronously so it never falls
+    // back to <body> — same contract as the Escape path and PlaybackSpeed's
+    // own selection handler. This runs before move() touches `busy`/`phase`,
+    // so the trigger is still enabled at the moment focus() is called.
+    closeAndReturnFocus()
     move(name)
   }
 
@@ -153,8 +157,8 @@ function MoveToCloud({ download, downloadHref, onMoved }) {
         onKeyDown={hasMenu ? onTriggerKeyDown : undefined}
         disabled={busy}
         aria-haspopup={hasMenu ? 'menu' : undefined}
-        aria-expanded={hasMenu ? open : undefined}
-        aria-controls={hasMenu && open ? menuId : undefined}
+        aria-expanded={hasMenu ? open && !busy : undefined}
+        aria-controls={hasMenu && open && !busy ? menuId : undefined}
         className="flex items-center justify-center gap-1 text-primary font-label-sm text-label-sm whitespace-nowrap border border-primary px-3 py-1 rounded-full hover:bg-primary/5 transition-colors active:scale-95 disabled:opacity-70 disabled:cursor-default disabled:active:scale-100"
       >
         <span
