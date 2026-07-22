@@ -22,26 +22,22 @@ export function useDismissableMenu(itemCount) {
     [],
   )
 
+  // Closes on outside pointerdown, and on focus moving outside — the latter
+  // covers tabbing/shift-tabbing out of the trigger+menu group, which a
+  // pointerdown listener alone would miss (no pointer press involved), and
+  // which would otherwise leave the panel (and its stale aria-expanded="true")
+  // on screen after focus has moved elsewhere.
   useEffect(() => {
     if (!open) return
-    const onDown = (e) => {
+    const onOutsideInteraction = (e) => {
       if (isOutside(e.target)) setOpen(false)
     }
-    document.addEventListener('pointerdown', onDown)
-    return () => document.removeEventListener('pointerdown', onDown)
-  }, [open, isOutside])
-
-  // Tabbing/shift-tabbing focus out of the trigger+menu group must also close the menu —
-  // otherwise the panel (and its stale aria-expanded="true") stays on screen after focus
-  // has moved elsewhere. Mirrors the pointerdown-outside effect above, but keyed off focus
-  // moving rather than a pointer press, so it catches the keyboard-only case too.
-  useEffect(() => {
-    if (!open) return
-    const onFocusIn = (e) => {
-      if (isOutside(e.target)) setOpen(false)
+    document.addEventListener('pointerdown', onOutsideInteraction)
+    document.addEventListener('focusin', onOutsideInteraction)
+    return () => {
+      document.removeEventListener('pointerdown', onOutsideInteraction)
+      document.removeEventListener('focusin', onOutsideInteraction)
     }
-    document.addEventListener('focusin', onFocusIn)
-    return () => document.removeEventListener('focusin', onFocusIn)
   }, [open, isOutside])
 
   // Roving focus: move DOM focus onto whichever item is active whenever the
@@ -50,8 +46,6 @@ export function useDismissableMenu(itemCount) {
     if (!open) return
     itemRefs.current[activeIndex]?.focus()
   }, [open, activeIndex])
-
-  const close = useCallback(() => setOpen(false), [])
 
   const closeAndReturnFocus = useCallback(() => {
     setOpen(false)
@@ -116,12 +110,10 @@ export function useDismissableMenu(itemCount) {
 
   return {
     open,
-    activeIndex,
     rootRef,
     triggerRef,
     menuId,
     openAt,
-    close,
     closeAndReturnFocus,
     onTriggerKeyDown,
     onMenuKeyDown,
