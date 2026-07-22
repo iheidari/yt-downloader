@@ -174,6 +174,7 @@ test('exchangeCode: sends no client_secret in the POST body (public client)', as
   assert.strictEqual(sentBody.get('code_verifier'), 'verifier-1');
   assert.strictEqual(sentBody.get('client_id'), CLIENT_ID);
   assert.strictEqual(sentBody.get('redirect_uri'), REDIRECT_URI);
+  assert.strictEqual(sentBody.get('scope'), 'Files.ReadWrite.AppFolder offline_access');
   assert.strictEqual(
     sentBody.has('client_secret'),
     false,
@@ -274,6 +275,7 @@ test('refresh: sends no client_secret either', async () => {
   const sentBody = new URLSearchParams(calls[0].options.body);
   assert.strictEqual(sentBody.get('grant_type'), 'refresh_token');
   assert.strictEqual(sentBody.get('refresh_token'), 'rt-old');
+  assert.strictEqual(sentBody.get('scope'), 'Files.ReadWrite.AppFolder offline_access');
   assert.strictEqual(sentBody.has('client_secret'), false);
 });
 
@@ -481,13 +483,13 @@ test('upload(): zero-byte file sends Content-Range "bytes 0-0/0", not a malforme
   });
 });
 
-test('upload(): when startSession returns no uploadUrl, throws a "upload" CloudError', async () => {
+test('upload(): when startSession returns no uploadUrl, throws a "upload" CloudError after exactly one attempt', async () => {
   mockFileChunks([Buffer.alloc(4)]);
-  // This CloudError is thrown with no `status`, and withRetry's transient
-  // check (`!status || status >= 500`) treats a missing status as transient
-  // too — so it gets retried MAX (3) times before finally surfacing. Queue
-  // enough copies of the "no uploadUrl" response to survive that.
-  mockFetchQueue(Array(3).fill(fakeResponse({ ok: true, status: 200, json: {} })));
+  // This CloudError carries the response's real (non-5xx) status, so
+  // withRetry's transient check (`!status || status >= 500`) treats it as
+  // terminal — a single canned response is enough; queueing more would mask a
+  // regression that made this retry again.
+  const calls = mockFetchQueue([fakeResponse({ ok: true, status: 200, json: {} })]);
   await assert.rejects(
     () =>
       onedrive.upload({
@@ -502,5 +504,100 @@ test('upload(): when startSession returns no uploadUrl, throws a "upload" CloudE
       assert.match(err.message, /did not return an upload session/);
       return true;
     },
+  );
+  assert.strictEqual(calls.length, 1, 'a non-5xx malformed response must not be retried');
+});
+
+test('upload(): a transient 5xx on createUploadSession is retried and then succeeds', async () => {
+  mockFileChunks([Buffer.alloc(4)]);
+  const calls = mockFetchQueue([
+    fakeResponse({ ok: false, status: 503, json: {} }),
+    fakeResponse({
+      ok: true,
+      status: 200,
+      json: { uploadUrl: 'https://upload.example/session-3' },
+    }),
+    fakeResponse({
+      ok: true,
+      status: 200,
+      json: { name: 'r.mp4', webUrl: 'https://onedrive.example/r.mp4' },
+    }),
+  ]);
+
+  const result = await onedrive.upload({
+    accessToken: 'at',
+    filePath: '/tmp/r.mp4',
+    fileName: 'r.mp4',
+    size: 4,
+  });
+
+  assert.strictEqual(calls.length, 3);
+  assert.deepStrictEqual(result, {
+    path: 'r.mp4',
+    name: 'r.mp4',
+    link: 'https://onedrive.example/r.mp4',
+  });
+});
+
+test('upload(): if the last chunk PUT never returns a terminal response (always 202), throws instead of silently reporting success', async () => {
+  mockFileChunks([Buffer.alloc(4)]);
+  mockFetchQueue([
+    fakeResponse({
+      ok: true,
+      status: 200,
+      json: { uploadUrl: 'https://upload.example/session-4' },
+    }),
+    // The one and only chunk PUT is "accepted" but never finalizes.
+    fakeResponse({ ok: false, status: 202, json: {} }),
+  ]);
+
+  await assert.rejects(
+    () =>
+      onedrive.upload({
+        accessToken: 'at',
+        filePath: '/tmp/never-done.mp4',
+        fileName: 'never-done.mp4',
+        size: 4,
+      }),
+    (err) => {
+      assert.ok(err instanceof onedrive.CloudError);
+      assert.strictEqual(err.code, 'upload');
+      assert.match(err.message, /did not confirm the upload finished/);
+      return true;
+    },
+  );
+});
+
+test('upload(): an already-aborted signal fails fast with no fetch calls', async () => {
+  mockFileChunks([Buffer.alloc(4)]);
+  const calls = mockFetchQueue([
+    fakeResponse({
+      ok: true,
+      status: 200,
+      json: { uploadUrl: 'https://upload.example/session-5' },
+    }),
+  ]);
+  const controller = new AbortController();
+  controller.abort();
+
+  await assert.rejects(
+    () =>
+      onedrive.upload({
+        accessToken: 'at',
+        filePath: '/tmp/x.mp4',
+        fileName: 'x.mp4',
+        size: 4,
+        signal: controller.signal,
+      }),
+    (err) => {
+      assert.ok(err instanceof onedrive.CloudError);
+      assert.strictEqual(err.code, 'aborted');
+      return true;
+    },
+  );
+  assert.strictEqual(
+    calls.length,
+    0,
+    'an already-aborted signal must not even attempt createUploadSession',
   );
 });

@@ -249,10 +249,19 @@ async function upload({ accessToken, filePath, fileName, size, onProgress, signa
     await handle.close();
   }
 
+  // The loop above exits on `offset >= total`, not on ever having seen a
+  // terminal (200/201) response — if Graph answered every chunk PUT with 202
+  // (including the one that reached the last byte), `file` is still null here.
+  // Treat that as a failure rather than reporting a move that never actually
+  // finalized.
+  if (!file) {
+    throw new CloudError('upload', 'OneDrive did not confirm the upload finished');
+  }
+
   return {
-    path: file?.name || fileName,
-    name: file?.name || fileName,
-    link: file?.webUrl || null,
+    path: file.name || fileName,
+    name: file.name || fileName,
+    link: file.webUrl || null,
   };
 }
 
