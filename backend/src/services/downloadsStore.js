@@ -247,7 +247,7 @@ function createStore(query) {
     // `isSupersedable` are one rule written twice — keep them adjacent.
     async supersedeForUser({ downloadId, userId, url, sourceKey }) {
       if (!url) return [];
-      const key = sourceKey || null;
+      const key = sourceKey ?? null;
       const { rows } = await query(
         `DELETE FROM downloads
           WHERE user_id = $1

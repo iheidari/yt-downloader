@@ -21,13 +21,19 @@ const { startJob, subscribe, cancelJob, DownloadCapError } = require('../service
 // history — not a security boundary, just validate shape/length and move on.
 // An invalid value is dropped (falls back to url-based matching) rather than
 // rejecting the whole download.
+// Postgres `text` rejects an embedded NUL outright, and any other C0 control
+// character has no business in an id string — reject the whole class (not
+// just \r\n) so a value that fails validation is actually DROPPED as
+// documented above, rather than passing here and then blowing up `store.insert`'s
+// query, which would reject the whole download instead of just falling back.
 const MAX_SOURCE_KEY_LENGTH = 200;
 function isValidSourceKey(value) {
   return (
     typeof value === 'string' &&
     value.length > 0 &&
     value.length <= MAX_SOURCE_KEY_LENGTH &&
-    !/[\r\n]/.test(value)
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: deliberately matching control chars to reject them
+    !/[\x00-\x1f\x7f]/.test(value)
   );
 }
 

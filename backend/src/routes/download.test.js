@@ -305,6 +305,18 @@ test('a sourceKey containing a newline is dropped', async () => {
   assert.equal(await sourceKeyAfter('youtube:abc\r\nX-Injected: true'), null);
 });
 
+// Postgres `text` rejects an embedded NUL outright — without this check the
+// value would clear isValidSourceKey only to fail later at store.insert's
+// query, turning into a 500 that rejects the whole download instead of just
+// falling back to url-based matching as documented.
+test('a sourceKey containing a NUL byte is dropped', async () => {
+  assert.equal(await sourceKeyAfter(`youtube:abc${String.fromCharCode(0)}`), null);
+});
+
+test('a sourceKey containing a tab or other control character is dropped', async () => {
+  assert.equal(await sourceKeyAfter('youtube:abc\tdef'), null);
+});
+
 test('a sourceKey exactly at the length limit is kept', async () => {
   const key = `youtube:${'a'.repeat(192)}`; // 200 chars total
   assert.equal(key.length, 200);
