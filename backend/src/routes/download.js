@@ -13,6 +13,24 @@ const {
 const { initSSE } = require('../utils/sse');
 const { startJob, subscribe, cancelJob, DownloadCapError } = require('../services/downloadManager');
 
+// The namespaced extractor id (0XC-117) rides the request body from the
+// client, which already has it from `/api/info` — untrusted input, exactly
+// like the `filesize` estimate below. It's only ever used to group THE
+// CALLER'S OWN rows for supersede matching (`supersedeForUser` is scoped by
+// `userId`), so a forged value can only cause a user to affect their own
+// history — not a security boundary, just validate shape/length and move on.
+// An invalid value is dropped (falls back to url-based matching) rather than
+// rejecting the whole download.
+const MAX_SOURCE_KEY_LENGTH = 200;
+function isValidSourceKey(value) {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= MAX_SOURCE_KEY_LENGTH &&
+    !/[\r\n]/.test(value)
+  );
+}
+
 // Human-readable bytes for the out-of-space error messages. Backend has no
 // shared formatter, and this is the only place that needs one.
 function formatBytes(bytes) {
@@ -36,8 +54,8 @@ function formatBytes(bytes) {
 // Best-effort by design: `runHook` already isolates hook failures so a DB or
 // filesystem blip can never turn a finished download into a failed one. The
 // hourly sweep reconciles anything left behind.
-async function supersedeOlderRows(store, { downloadId, userId, url }) {
-  const superseded = await store.supersedeForUser({ downloadId, userId, url });
+async function supersedeOlderRows(store, { downloadId, userId, url, sourceKey }) {
+  const superseded = await store.supersedeForUser({ downloadId, userId, url, sourceKey });
   for (const id of superseded) {
     try {
       deleteDownload(id);
@@ -65,8 +83,9 @@ function createDownloadRouter({ store, start = startJob }) {
   // body; the concurrency cap, the global disk backstop and the per-user storage
   // quota are all enforced here, before any job (or SSE) is created.
   router.post('/', async (req, res) => {
-    const { url, formatId, type, title, thumbnail, keep, filesize } = req.body;
+    const { url, formatId, type, title, thumbnail, keep, filesize, sourceKey } = req.body;
     const userId = req.user.user_id;
+    const resolvedSourceKey = isValidSourceKey(sourceKey) ? sourceKey : null;
 
     if (!url || !formatId) {
       return res.status(400).json({
@@ -167,6 +186,7 @@ function createDownloadRouter({ store, start = startJob }) {
         type: resolvedType,
         filesize: hasWantBytes ? wantBytes : null,
         kept,
+        sourceKey: resolvedSourceKey,
       });
     } catch (err) {
       console.error(`❌ Failed to record download ${downloadId}:`, err.message);
@@ -183,6 +203,7 @@ function createDownloadRouter({ store, start = startJob }) {
           title,
           thumbnail,
           keep: kept,
+          sourceKey: resolvedSourceKey,
         },
         {
           // Terminal outcomes land on the user's row. `result.size` is the real
@@ -193,9 +214,14 @@ function createDownloadRouter({ store, start = startJob }) {
               filesize: result.size,
             });
             // Only now that this download has actually landed does it replace
-            // the user's older rows for the same URL — an abandoned or failed
-            // re-download must leave the existing one intact.
-            await supersedeOlderRows(store, { downloadId, userId, url });
+            // the user's older rows for the same video — an abandoned or
+            // failed re-download must leave the existing one intact.
+            await supersedeOlderRows(store, {
+              downloadId,
+              userId,
+              url,
+              sourceKey: resolvedSourceKey,
+            });
           },
           onError: () => store.markFailed(downloadId),
         },

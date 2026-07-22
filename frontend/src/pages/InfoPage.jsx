@@ -84,6 +84,10 @@ function InfoPage() {
           thumbnail: info.thumbnail,
           keep,
           filesize,
+          // Namespaced extractor id from /api/info — lets the server match a
+          // re-download by canonical video identity instead of the raw URL
+          // string (0XC-117).
+          sourceKey: info.sourceKey,
         }),
       })
       const data = await response.json()

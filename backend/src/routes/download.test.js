@@ -253,3 +253,29 @@ test('superseding frees the old row’s quota', async () => {
   // Only the fresh download's real on-disk size remains.
   assert.equal(await store.usageForUser(USER), 4242);
 });
+
+// --- 0XC-117: supersede by canonical video identity, not just the raw URL ---
+
+test('a completed re-download with a matching sourceKey supersedes an old row pasted as a different URL form', async () => {
+  await seedAt('old', USER, SRC, { source_key: 'youtube:abc' });
+
+  const res = await start({
+    url: 'https://youtu.be/abc?si=xyz',
+    filesize: 10 * MB,
+    sourceKey: 'youtube:abc',
+  });
+  assert.equal(res.status, 200);
+  await finish(started[0]);
+
+  const ids = (await store.listByUser(USER)).map((r) => r.downloadId);
+  assert.equal(ids.length, 1);
+  assert.notEqual(ids[0], 'old');
+});
+
+test('an invalid sourceKey is dropped rather than rejecting the download', async () => {
+  const res = await start({ url: SRC, filesize: 10 * MB, sourceKey: 'x'.repeat(500) });
+  assert.equal(res.status, 200);
+
+  const { downloadId } = (await res.json()).data;
+  assert.equal((await store.findForUser(downloadId, USER)).sourceKey, null);
+});
