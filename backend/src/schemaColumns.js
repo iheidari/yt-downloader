@@ -3,9 +3,14 @@
 // hand-maintained list that silently falls behind (0XC-129). Only presence
 // is parsed — not types, defaults, or constraints.
 
-const CREATE_TABLE_RE = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"?(\w+)"?\s*\(/gi;
-const ALTER_ADD_COLUMN_RE =
-  /ALTER\s+TABLE\s+"?(\w+)"?\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?"?(\w+)"?/gi;
+const CREATE_TABLE_RE = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?("?)(\w+)"?\s*\(/gi;
+// Postgres allows several `ADD COLUMN` clauses in one ALTER TABLE statement
+// (`ALTER TABLE t ADD COLUMN a text, ADD COLUMN b text;`), so this is matched
+// in two passes: ALTER_TABLE_RE finds the statement and its table name, then
+// ADD_COLUMN_CLAUSE_RE is run over the statement's own body to find every
+// clause inside it (see parseSchemaColumns).
+const ALTER_TABLE_RE = /ALTER\s+TABLE\s+(?:ONLY\s+)?("?)(\w+)"?\s+([^;]*);/gi;
+const ADD_COLUMN_CLAUSE_RE = /ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?("?)(\w+)"?/gi;
 
 // Table-level constraint lines start with one of these instead of a column
 // name — e.g. `PRIMARY KEY (a, b)`, `UNIQUE (x)`, `FOREIGN KEY (...) REFERENCES …`.
@@ -40,6 +45,8 @@ function isTableConstraintEntry(word, rest) {
     case 'foreign':
       return /^key\b/i.test(trimmedRest);
     case 'unique':
+      // PG15+ allows `UNIQUE NULLS NOT DISTINCT (cols)` before the column list.
+      return trimmedRest.replace(/^nulls\s+not\s+distinct\s*/i, '').startsWith('(');
     case 'check':
       return trimmedRest.startsWith('(');
     case 'exclude':
@@ -54,29 +61,50 @@ function isTableConstraintEntry(word, rest) {
 }
 
 function stripComments(sql) {
-  return sql.replace(/--.*$/gm, '');
+  // Block comments first, so a `--` inside one doesn't confuse the line-comment
+  // pass, and so commented-out example/legacy DDL is never parsed as real.
+  return sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--.*$/gm, '');
 }
 
-// Advances a shared paren-depth/string-literal scan state by one character.
-// Both readBalancedParens and splitTopLevel need to track "are we inside a
-// nested paren?" and "are we inside a single-quoted string?" (so a comma or
-// paren in a DEFAULT value like `numeric(10,2)` or `'a,b(c)'` isn't mistaken
-// for real structure) — this is that one state machine, shared.
+// Postgres folds an unquoted identifier to lowercase but preserves a quoted
+// one exactly, so `CREATE TABLE Users` and a later `ALTER TABLE users` name
+// the same real table, while `"Users"` would not. Matching this in the
+// parser is what lets identifiers merge/key the same way the database sees
+// them (`information_schema.columns` only ever holds the folded name).
+function resolveIdentifier(quoted, name) {
+  return quoted ? name : name.toLowerCase();
+}
+
+// Advances a shared paren-depth/string-literal/quoted-identifier scan state
+// by one character. readBalancedParens, splitTopLevel, and the ALTER TABLE
+// scan all need to track "are we inside a nested paren?", "inside a
+// single-quoted string?" (`numeric(10,2)`, `'a,b(c)'`), and "inside a
+// double-quoted identifier?" (`"a,b"`) so a comma or paren inside any of
+// those is never mistaken for real structure — this is that one state
+// machine, shared.
 function advanceScanState(state, char) {
   if (state.inString) {
     if (char === "'") state.inString = false;
-    return state;
+    return;
+  }
+  if (state.inQuotedIdent) {
+    if (char === '"') state.inQuotedIdent = false;
+    return;
   }
   if (char === "'") state.inString = true;
+  else if (char === '"') state.inQuotedIdent = true;
   else if (char === '(') state.depth++;
   else if (char === ')') state.depth--;
-  return state;
+}
+
+function initialScanState(depth) {
+  return { depth, inString: false, inQuotedIdent: false };
 }
 
 // Returns the substring between the '(' just consumed (at `openIndex`) and
 // its matching close.
 function readBalancedParens(sql, openIndex) {
-  const state = { depth: 1, inString: false };
+  const state = initialScanState(1);
   for (let i = openIndex; i < sql.length; i++) {
     advanceScanState(state, sql[i]);
     if (state.depth === 0) return sql.slice(openIndex, i);
@@ -85,18 +113,18 @@ function readBalancedParens(sql, openIndex) {
 }
 
 // Splits a CREATE TABLE body into its comma-separated column/constraint
-// entries, respecting nested parens and string literals so an internal
-// comma never causes a false split.
+// entries, respecting nested parens, string literals, and quoted identifiers
+// so an internal comma never causes a false split.
 function splitTopLevel(body) {
   const parts = [];
-  const state = { depth: 0, inString: false };
+  const state = initialScanState(0);
   let start = 0;
   for (let i = 0; i < body.length; i++) {
-    // A comma never changes depth/inString itself, so checking state after
+    // A comma never changes the scan state itself, so checking state after
     // advancing is equivalent to checking before — and lets one call site
     // both update the state and test it.
     advanceScanState(state, body[i]);
-    if (body[i] === ',' && state.depth === 0 && !state.inString) {
+    if (body[i] === ',' && state.depth === 0 && !state.inString && !state.inQuotedIdent) {
       parts.push(body.slice(start, i));
       start = i + 1;
     }
@@ -108,19 +136,31 @@ function splitTopLevel(body) {
 function columnNameFromEntry(entry) {
   const trimmed = entry.trim();
   if (!trimmed) return null;
-  const match = trimmed.match(/^"?(\w+)"?/);
+  // A quoted identifier's content isn't restricted to \w — it can hold any
+  // character except an unescaped `"` (e.g. `"a,b"`), so it's captured up to
+  // its closing quote rather than by a word-character regex, and it's never
+  // checked against TABLE_CONSTRAINT_KEYWORDS: quoting an identifier that
+  // happens to spell a keyword makes it a literal name, never a constraint.
+  if (trimmed[0] === '"') {
+    const closeIndex = trimmed.indexOf('"', 1);
+    return closeIndex === -1 ? null : trimmed.slice(1, closeIndex);
+  }
+  const match = trimmed.match(/^(\w+)/);
   if (!match) return null;
   const word = match[1].toLowerCase();
   if (TABLE_CONSTRAINT_KEYWORDS.has(word)) {
     const rest = trimmed.slice(match[0].length);
     if (isTableConstraintEntry(word, rest)) return null;
   }
-  return match[1];
+  return word;
 }
 
 // Parses `sql` (a schema.sql file's contents) into `{ table: [column, …] }`.
-// Throws if it finds zero columns across every table — a parser that
-// silently matches nothing must fail loudly rather than pass vacuously.
+// Throws if it finds zero columns across every table, or if it can't fully
+// account for every `CREATE TABLE` statement in the file (e.g. a
+// schema-qualified `CREATE TABLE public.foo (...)`, which this parser
+// doesn't understand) — a parser that silently matches less than the whole
+// file must fail loudly rather than pass on a partial result.
 function parseSchemaColumns(sql) {
   const cleaned = stripComments(sql);
   const columnsByTable = {};
@@ -129,10 +169,12 @@ function parseSchemaColumns(sql) {
     columnsByTable[table].add(column);
   };
 
+  let matchedCreateTables = 0;
   CREATE_TABLE_RE.lastIndex = 0;
   let match = CREATE_TABLE_RE.exec(cleaned);
   while (match) {
-    const table = match[1];
+    matchedCreateTables++;
+    const table = resolveIdentifier(match[1] === '"', match[2]);
     const openIndex = CREATE_TABLE_RE.lastIndex;
     const body = readBalancedParens(cleaned, openIndex);
     CREATE_TABLE_RE.lastIndex = openIndex + body.length + 1;
@@ -143,11 +185,25 @@ function parseSchemaColumns(sql) {
     match = CREATE_TABLE_RE.exec(cleaned);
   }
 
-  ALTER_ADD_COLUMN_RE.lastIndex = 0;
-  match = ALTER_ADD_COLUMN_RE.exec(cleaned);
+  const statementCount = (cleaned.match(/\bCREATE\s+TABLE\b/gi) || []).length;
+  if (statementCount !== matchedCreateTables) {
+    throw new Error(
+      `schema.sql parser: found ${statementCount} CREATE TABLE statement(s) but only parsed ${matchedCreateTables} — check for schema-qualified names or other unsupported syntax`,
+    );
+  }
+
+  ALTER_TABLE_RE.lastIndex = 0;
+  match = ALTER_TABLE_RE.exec(cleaned);
   while (match) {
-    addColumn(match[1], match[2]);
-    match = ALTER_ADD_COLUMN_RE.exec(cleaned);
+    const table = resolveIdentifier(match[1] === '"', match[2]);
+    const statementBody = match[3];
+    ADD_COLUMN_CLAUSE_RE.lastIndex = 0;
+    let clause = ADD_COLUMN_CLAUSE_RE.exec(statementBody);
+    while (clause) {
+      addColumn(table, resolveIdentifier(clause[1] === '"', clause[2]));
+      clause = ADD_COLUMN_CLAUSE_RE.exec(statementBody);
+    }
+    match = ALTER_TABLE_RE.exec(cleaned);
   }
 
   const result = {};
