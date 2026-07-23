@@ -71,3 +71,13 @@ test('buildCaptions handles manual-only and auto-only sources independently', ()
   assert.deepEqual(buildCaptions({ subtitles: { en: [] } }), { manual: ['en'], auto: [] });
   assert.deepEqual(buildCaptions({ automatic_captions: { en: [] } }), { manual: [], auto: ['en'] });
 });
+
+// yt-dlp's --dump-json omits `subtitles`/`automatic_captions` entirely when a
+// source has none, but some extractors emit an explicit `null` instead of
+// omitting the key. `info.subtitles || {}` must treat both the same way.
+test('buildCaptions treats an explicit null subtitles/automatic_captions the same as an absent key', () => {
+  assert.deepEqual(buildCaptions({ subtitles: null, automatic_captions: null }), {
+    manual: [],
+    auto: [],
+  });
+});

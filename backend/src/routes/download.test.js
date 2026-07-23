@@ -171,6 +171,25 @@ test('non-array/non-string caption fields are normalized to filtered arrays', as
   assert.deepEqual(started[0].params.captions, { manual: ['en'], auto: [] });
 });
 
+test('an explicit null captions value is treated the same as omitted', async () => {
+  await start({ filesize: 10 * MB, captions: null });
+
+  assert.equal(started[0].params.captions, undefined);
+});
+
+// `typeof [] === 'object'`, so an array slips past the `typeof captions !==
+// 'object'` guard that rejects a string/number payload. `captions.manual` and
+// `captions.auto` are then both `undefined` on an array, so this normalizes
+// to empty arrays rather than being dropped as malformed like a string is —
+// pinning that actual behavior here so a future refactor can't change it
+// silently (see the "outside my domain" note in the review reply about
+// whether this asymmetry is intentional).
+test('an array captions payload is treated as an object with no manual/auto keys, not dropped', async () => {
+  await start({ filesize: 10 * MB, captions: ['en', 'fr'] });
+
+  assert.deepEqual(started[0].params.captions, { manual: [], auto: [] });
+});
+
 test('a failed start (over the concurrency cap) rolls its row back', async () => {
   startImpl = () => {
     throw new DownloadCapError(3);
