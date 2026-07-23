@@ -1,5 +1,12 @@
 # Cloud Upload ("Move to cloud") — Design & Next Steps
 
+> **Historical design record.** This document captures the original design interview and is kept
+> for its rationale, but **CLAUDE.md's "Cloud upload (\"Move to cloud\")" section is authoritative
+> for shipped behavior** — where the two disagree, trust CLAUDE.md and treat this file as
+> superseded. Notably, the lifecycle actually shipped as `markMoved` (media dropped, the row and
+> its `metadata.json` **kept**), not the hard-delete "Model A" this document originally specified
+> — see the "Lifecycle" section below, which has its own superseded-by-0XC-100 note.
+
 > Status: **implemented** for **Dropbox and Google Drive**. This document is the agreed design
 > from the design interview; OneDrive remains a fast-follow. See "Implementation" below for where
 > the code lives. To enable a provider, set its env vars (Dropbox →
