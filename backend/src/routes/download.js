@@ -22,7 +22,11 @@ const { startJob, subscribe, cancelJob, DownloadCapError } = require('../service
 // Absent/malformed input returns undefined so the caller can tell "no
 // captions data supplied" (unknown) apart from "supplied, empty" (none).
 function sanitizeCaptions(captions) {
-  if (!captions || typeof captions !== 'object') return undefined;
+  // `typeof [] === 'object'`, so an array must be rejected explicitly here —
+  // otherwise it'd slip past the object check and normalize to a false
+  // "known: no captions" instead of being dropped as malformed like a
+  // string/number payload is.
+  if (!captions || typeof captions !== 'object' || Array.isArray(captions)) return undefined;
   const toLangs = (v) => (Array.isArray(v) ? v.filter((lang) => typeof lang === 'string') : []);
   return { manual: toLangs(captions.manual), auto: toLangs(captions.auto) };
 }

@@ -177,17 +177,14 @@ test('an explicit null captions value is treated the same as omitted', async () 
   assert.equal(started[0].params.captions, undefined);
 });
 
-// `typeof [] === 'object'`, so an array slips past the `typeof captions !==
-// 'object'` guard that rejects a string/number payload. `captions.manual` and
-// `captions.auto` are then both `undefined` on an array, so this normalizes
-// to empty arrays rather than being dropped as malformed like a string is —
-// pinning that actual behavior here so a future refactor can't change it
-// silently (see the "outside my domain" note in the review reply about
-// whether this asymmetry is intentional).
-test('an array captions payload is treated as an object with no manual/auto keys, not dropped', async () => {
+// `typeof [] === 'object'`, so an array must be rejected explicitly — without
+// that check it would slip past the object guard and normalize to a false
+// "known: no captions" instead of being dropped as malformed like a
+// string/number payload is (caught in review, see 0XC-14).
+test('an array captions payload is dropped as malformed, same as a string', async () => {
   await start({ filesize: 10 * MB, captions: ['en', 'fr'] });
 
-  assert.deepEqual(started[0].params.captions, { manual: [], auto: [] });
+  assert.equal(started[0].params.captions, undefined);
 });
 
 test('a failed start (over the concurrency cap) rolls its row back', async () => {
