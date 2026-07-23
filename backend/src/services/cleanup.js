@@ -3,6 +3,7 @@ const {
   listDownloadDirs,
   isValidDownloadId,
   hasMedia,
+  getDownloadFileSize,
 } = require('../utils/storage');
 const { sweepJobs, runningDownloadIds } = require('./downloadManager');
 
@@ -23,6 +24,57 @@ const STALE_DOWNLOADING_MS = 6 * 60 * 60 * 1000;
 const RECONCILE_GRACE_MS = 10 * 60 * 1000;
 
 let cleanupInterval = null;
+
+// yt-dlp's work-in-progress artifacts. A directory containing one of these is
+// a download that died mid-flight, not one that finished — only *finished*
+// media is evidence of success (0XC-120's partial-media edge case).
+const PARTIAL_FILE_RE = /\.(part|ytdl)$/i;
+
+// A download whose media landed on disk must never end up recorded as failed.
+// A `downloading` row whose directory already holds finished media — files
+// present, none of them yt-dlp partials — and whose job is NOT running in
+// this process didn't fail: the completion hook's DB write was lost (e.g. a
+// transient error), not the download. Detect it from the `downloads` snapshot
+// the caller already scanned and correct the row from the real file, not a
+// stale/client-estimated size. The result file is picked the same way the
+// download flow itself does (see ytdlp.js's describeDownloadedFile): the
+// LARGEST file wins, since the merged output always outweighs any leftover
+// intermediate fragments.
+//
+// This MUST run before failStale: on the same sweep, whichever runs first
+// wins the race for a row that qualifies for both, and only this one is
+// correct for a row with finished media on disk. A genuinely in-flight job is
+// untouched here — it's excluded via runningDownloadIds() (and a job that
+// died mid-flight leaves partial artifacts, caught above).
+//
+// Pre-filters to rows that are actually `downloading` in the DB first —
+// normally none, and never more than a handful — instead of stat-ing and
+// updating every live download on disk each sweep. Unlike
+// expireMissing/failStale, this can't be one bulk UPDATE: it needs a distinct
+// on-disk filename/size per row, which only exists after reading the
+// filesystem. Returns the number of rows reconciled.
+async function reconcileStrandedDownloads(store, downloads) {
+  const downloadingIds = new Set(await store.downloadingIds());
+  if (downloadingIds.size === 0) return 0;
+  const running = new Set(runningDownloadIds());
+  let reconciled = 0;
+  for (const d of downloads) {
+    if (!downloadingIds.has(d.downloadId) || running.has(d.downloadId)) continue;
+    if (!hasMedia(d) || d.files.some((f) => PARTIAL_FILE_RE.test(f))) continue;
+    let result = null;
+    for (const f of d.files) {
+      const size = getDownloadFileSize(d.downloadId, f);
+      if (size !== null && (!result || size > result.filesize)) {
+        result = { filename: f, filesize: size };
+      }
+    }
+    if (!result) continue; // the files vanished between the scan and now
+    if (await store.markComplete(d.downloadId, result, { onlyIfDownloading: true })) {
+      reconciled++;
+    }
+  }
+  return reconciled;
+}
 
 // `store` is the per-user history store (server.js passes the live one). Omitted
 // — as in unit tests and the standalone CLI, which have no database — the sweep
@@ -102,6 +154,13 @@ async function runCleanup(store = null) {
   // standalone CLI without a database, where this is a no-op.
   if (store) {
     try {
+      const strandedComplete = await reconcileStrandedDownloads(store, downloads);
+      if (strandedComplete > 0) {
+        console.log(
+          `🧹 Reconciled ${strandedComplete} stranded download(s) that had already finished`,
+        );
+      }
+
       // Reconcile against what is actually still on disk, so rows also expire
       // when the files went away by some other route (standalone `npm run
       // cleanup`, a manual rm) — not just when this run expired them. Derived

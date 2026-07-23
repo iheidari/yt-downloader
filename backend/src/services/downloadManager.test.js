@@ -217,3 +217,42 @@ test('sweepJobs never prunes a still-running job, however far `now` is pushed', 
   assert.equal(manager.sweepJobs(Date.now() + 365 * 24 * 60 * 60 * 1000), 0);
   assert.notEqual(manager.subscribe(job.downloadId, noopObservers()), null);
 });
+
+// --- terminal hooks -----------------------------------------------------------
+
+test('a completion hook that throws does not stop the job from reporting success', async () => {
+  // This is the existing, deliberate guarantee 0XC-120 builds on: a DB blip in
+  // the completion hook must never turn a finished download into a failed one
+  // from the client's point of view. The sweep-side reconcile in cleanup.js is
+  // what later corrects the row this hook failed to write.
+  let hookCalls = 0;
+  const downloadId = crypto.randomUUID();
+  const job = manager.startJob(
+    {
+      downloadId,
+      url: 'https://example.com/watch?v=x',
+      formatId: '137',
+      type: 'video',
+      title: 'A video',
+      thumbnail: null,
+      keep: false,
+    },
+    {
+      onComplete: () => {
+        hookCalls++;
+        throw new Error('simulated DB write failure');
+      },
+      onError: () => {
+        throw new Error('should not be called on a successful download');
+      },
+    },
+  );
+  const done = waitForTerminal(job.downloadId, 'complete');
+
+  pending[job.downloadId].resolve({ filename: 'stub.mp4', size: 4242 });
+  const result = await done;
+
+  assert.equal(hookCalls, 1);
+  assert.equal(result.filename, 'stub.mp4');
+  assert.equal(result.size, 4242);
+});

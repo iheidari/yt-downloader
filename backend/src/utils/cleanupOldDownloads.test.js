@@ -1,8 +1,16 @@
-const { test, afterEach } = require('node:test');
+const { test, afterEach, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
+
+// Isolate this file's sweeps in a private DOWNLOADS_DIR (0XC-127): the
+// fresh-scan `cleanupOldDownloads(1)` calls below would otherwise delete
+// other, concurrently-running test files' aged fixtures in the shared real
+// downloads root. Must be set BEFORE ./storage is required, since it resolves
+// the directory once at load time.
+process.env.DOWNLOADS_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'tubekeep-sweep-test-'));
 
 const {
   cleanupOldDownloads,
@@ -31,6 +39,10 @@ afterEach(() => {
   for (const dir of created.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+after(() => {
+  fs.rmSync(process.env.DOWNLOADS_DIR, { recursive: true, force: true });
 });
 
 const ONE_HOUR_MS = 60 * 60 * 1000;

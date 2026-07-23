@@ -24,13 +24,32 @@ const { createStore } = require('./services/authStore');
 const { createStore: createDownloadsStore } = require('./services/downloadsStore');
 const { createRequireAuth } = require('./middleware/requireAuth');
 const mailer = require('./services/mailer');
-const { query } = require('./db');
+const { query, getPool } = require('./db');
+const { applySchema } = require('./dbInit');
 const { startCleanupScheduler } = require('./services/cleanup');
 const { downloadsDir } = require('./utils/storage');
 const { rateLimit } = require('./utils/rateLimit');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Production sits behind exactly one proxy hop: Cloudflare, terminating
+// straight into this container (docker-compose maps the port directly, no
+// nginx/Caddy in front — see CLAUDE.md's Deployment section). `trust proxy: 1`
+// tells Express to read the client's real address from the outermost
+// X-Forwarded-For entry set by that one hop, so `req.ip` reflects the actual
+// visitor instead of Cloudflare's own edge IP for every request (which
+// collapsed every client into one rate-limit bucket — 0XC-128). A blanket
+// `true` would be wrong here: it trusts every hop in an X-Forwarded-For chain,
+// letting a client forge extra entries to mint unlimited buckets.
+//
+// This is still only the fallback path, though: X-Forwarded-For is content a
+// client controls, not something Cloudflare's edge authenticates — a request
+// that skips Cloudflare entirely can present any chain it likes. rateLimit.js
+// prefers the CF-Connecting-IP header (which Cloudflare does overwrite) for
+// exactly that reason; `req.ip`/`trust proxy` only matters as its fallback
+// for local dev and non-Cloudflare deploys.
+app.set('trust proxy', 1);
 
 // Fail fast on missing required secrets rather than degrading silently (a missing
 // JWT_SECRET otherwise makes every session 401 while /verify 500s). Hard error in
@@ -193,11 +212,33 @@ app.use((err, _req, res, _next) => {
   });
 });
 
-startCleanupScheduler({ store: downloadsStore });
+// Apply schema.sql (idempotent) before accepting traffic, so a database
+// missing a column a later commit added self-heals with no manual `db:init`
+// step (0XC-115). Skipped with no DATABASE_URL (unit tests, offline dev) —
+// db.js's pool is created lazily, so importing it here doesn't connect on its
+// own. A failure is fatal in production (mirrors the JWT_SECRET check above);
+// in development it's a loud warning so working offline still boots.
+async function ensureSchema() {
+  if (!process.env.DATABASE_URL) return;
+  try {
+    await applySchema(getPool());
+    console.log('✅ Database schema up to date.');
+  } catch (err) {
+    console.error('❌ Failed to apply database schema:', err.message);
+    if (process.env.NODE_ENV === 'production') {
+      process.exit(1);
+    }
+    console.warn('⚠️  Continuing without a verified schema (development only).');
+  }
+}
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📁 Downloads directory: ${downloadsDir}`);
+ensureSchema().then(() => {
+  startCleanupScheduler({ store: downloadsStore });
+
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
+    console.log(`📁 Downloads directory: ${downloadsDir}`);
+  });
 });
 
 module.exports = app;

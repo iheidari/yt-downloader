@@ -1,7 +1,11 @@
 const path = require('node:path');
 const fs = require('node:fs');
 
-const downloadsDir = path.join(__dirname, '../../downloads');
+// Resolve once at load time so every consumer (routes, cleanup, tests) sees the
+// same absolute path. Defaults to the historical in-tree location.
+const downloadsDir = path.resolve(
+  process.env.DOWNLOADS_DIR || path.join(__dirname, '../../downloads'),
+);
 
 // downloadIds are server-minted UUIDs. Anything else in a route param is an
 // injection attempt — reject it before it ever reaches path.join / fs.
@@ -94,6 +98,22 @@ function getDownloadFilePath(downloadId, filename) {
     // fall through to null
   }
   return null;
+}
+
+// Actual on-disk byte size of one of a download's files, or null if it isn't
+// actually there (e.g. it vanished between a directory listing and this call).
+// Reuses getDownloadFilePath's validation/traversal guard, so callers get the
+// same "confirmed to exist as a file" contract. Used by the cleanup reconcile
+// (see cleanup.js) to trust the real file over a stale or client-estimated
+// size.
+function getDownloadFileSize(downloadId, filename) {
+  const filePath = getDownloadFilePath(downloadId, filename);
+  if (!filePath) return null;
+  try {
+    return fs.statSync(filePath).size;
+  } catch {
+    return null;
+  }
 }
 
 // Create (idempotently) the per-download directory and return its path. The
@@ -245,6 +265,7 @@ module.exports = {
   listDownloadDirs,
   hasMedia,
   getDownloadFilePath,
+  getDownloadFileSize,
   ensureDownloadDir,
   deleteDownload,
   expireDownload,
