@@ -144,6 +144,59 @@ test('expireMissing spares rows younger than the grace window', async () => {
   assert.equal((await store.findForUser('longGone', USER)).expired, true);
 });
 
+test('markComplete({ onlyIfDownloading: true }) reconciles a stranded row from the real file', async () => {
+  const store = createMemoryStore();
+  await store.insert({ downloadId: 'stranded', userId: USER, filesize: 100 });
+
+  assert.equal(
+    await store.markComplete(
+      'stranded',
+      { filename: 'real.mp4', filesize: 999 },
+      { onlyIfDownloading: true },
+    ),
+    true,
+  );
+
+  const row = await store.findForUser('stranded', USER);
+  assert.equal(row.status, 'complete');
+  assert.equal(row.filename, 'real.mp4');
+  assert.equal(row.size, 999);
+  // The corrected size now counts toward the user's quota.
+  assert.equal(await store.usageForUser(USER), 999);
+});
+
+test('markComplete({ onlyIfDownloading: true }) is a no-op for a row that is not (or no longer) downloading', async () => {
+  const store = createMemoryStore();
+  await seed(store, 'alreadyDone', USER, 100);
+  await store.markFailed('alreadyDone'); // pretend it raced with something else
+
+  assert.equal(
+    await store.markComplete(
+      'alreadyDone',
+      { filename: 'x.mp4', filesize: 1 },
+      { onlyIfDownloading: true },
+    ),
+    false,
+  );
+  assert.equal(
+    await store.markComplete(
+      'missing',
+      { filename: 'x.mp4', filesize: 1 },
+      { onlyIfDownloading: true },
+    ),
+    false,
+  );
+});
+
+test('downloadingIds returns only rows currently downloading', async () => {
+  const store = createMemoryStore();
+  await store.insert({ downloadId: 'a', userId: USER, filesize: 100 });
+  await seed(store, 'b', USER, 100); // completed via seed()
+  await store.insert({ downloadId: 'c', userId: USER, filesize: 100 });
+
+  assert.deepEqual((await store.downloadingIds()).sort(), ['a', 'c']);
+});
+
 test('failStale retires downloads stranded by a restart, sparing recent ones', async () => {
   const store = createMemoryStore();
   await store.insert({ downloadId: 'fresh', userId: USER, filesize: 100 });
