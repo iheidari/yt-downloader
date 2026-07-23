@@ -1,6 +1,5 @@
 const { EventEmitter } = require('node:events');
 const { downloadVideo, downloadAudio } = require('./ytdlp');
-const { saveDownloadMetadata } = require('../utils/storage');
 const { friendlyYtDlpError } = require('../utils/friendlyError');
 
 // In-memory registry of download jobs, keyed by downloadId. A job runs yt-dlp to
@@ -32,12 +31,21 @@ class DownloadCapError extends Error {
   }
 }
 
-function runningCount() {
-  let n = 0;
-  for (const job of jobs.values()) {
-    if (job.status === 'running') n++;
+// Ids of jobs currently running in THIS process. The cleanup sweep uses this to
+// never age out a directory a live job is still writing to — precise where the
+// old metadata-presence check was only a heuristic. In-memory only, so it can't
+// protect a job that was running before a restart (already a known gap —
+// sweepJobs/failStale exist because the registry doesn't survive one either).
+function runningDownloadIds() {
+  const ids = [];
+  for (const [id, job] of jobs) {
+    if (job.status === 'running') ids.push(id);
   }
-  return n;
+  return ids;
+}
+
+function runningCount() {
+  return runningDownloadIds().length;
 }
 
 // Attach an observer to a job. Synchronously replays the job's current state
@@ -109,7 +117,9 @@ async function runJob(job) {
     }
 
     // `type` and `keep` are already normalized by the route before startJob, so
-    // no re-defaulting/coercion is needed here.
+    // no re-defaulting/coercion is needed here. This shape (not persisted
+    // anywhere — the `downloads` row is the lifecycle record) only feeds the
+    // SSE `complete` payload and the completion hook below.
     const metadata = {
       url,
       title: title || result.filename,
@@ -122,7 +132,6 @@ async function runJob(job) {
       createdAt: new Date().toISOString(),
       downloadId,
     };
-    saveDownloadMetadata(downloadId, metadata);
 
     job.status = 'complete';
     job.progress = 100;
@@ -231,5 +240,6 @@ module.exports = {
   subscribe,
   cancelJob,
   sweepJobs,
+  runningDownloadIds,
   DownloadCapError,
 };
