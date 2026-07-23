@@ -23,7 +23,7 @@ require.cache[ytdlpPath] = {
   },
 };
 
-const { ensureDownloadDir } = require('../utils/storage');
+const { ensureDownloadDir, downloadsDir } = require('../utils/storage');
 const { startJob, subscribe } = require('./downloadManager');
 
 const created = [];
@@ -112,4 +112,86 @@ test('the download directory really did receive metadata.json before the hook ra
   assert.equal(fs.existsSync(`${dir}/metadata.json`), true);
   const metadata = JSON.parse(fs.readFileSync(`${dir}/metadata.json`, 'utf8'));
   assert.equal(metadata.filename, 'stub.m4a');
+});
+
+// 0XC-14: caption availability rides the job params straight into metadata.json.
+
+test('metadata.json carries the captions field when the route supplied one', async () => {
+  const downloadId = crypto.randomUUID();
+  created.push(ensureDownloadDir(downloadId));
+  const captions = { manual: ['en'], auto: ['en', 'es'] };
+
+  await runToCompletion(
+    {
+      downloadId,
+      url: 'https://example.com/watch?v=z',
+      formatId: 'best',
+      type: 'video',
+      title: 'A video',
+      thumbnail: null,
+      keep: false,
+      captions,
+    },
+    { onComplete: () => {}, onError: () => {} },
+  );
+
+  const metadata = JSON.parse(
+    fs.readFileSync(`${downloadsDir}/${downloadId}/metadata.json`, 'utf8'),
+  );
+  assert.deepEqual(metadata.captions, captions);
+});
+
+test('metadata.json omits captions entirely when none was supplied (unknown, not none)', async () => {
+  const downloadId = crypto.randomUUID();
+  created.push(ensureDownloadDir(downloadId));
+
+  await runToCompletion(
+    {
+      downloadId,
+      url: 'https://example.com/watch?v=z2',
+      formatId: 'best',
+      type: 'video',
+      title: 'A video',
+      thumbnail: null,
+      keep: false,
+    },
+    { onComplete: () => {}, onError: () => {} },
+  );
+
+  const metadata = JSON.parse(
+    fs.readFileSync(`${downloadsDir}/${downloadId}/metadata.json`, 'utf8'),
+  );
+  assert.equal('captions' in metadata, false);
+});
+
+// The route's sanitizeCaptions always returns a (possibly empty-fielded)
+// object rather than `{}` collapsing to falsy, so `if (captions)` in
+// runJob still writes it — this is the "supplied, but the source genuinely
+// has no captions" case the field's presence-vs-absence contract turns on
+// (see the 0XC-14 CLAUDE.md note), distinct from the omitted-entirely test
+// above where the route was never given a captions object at all.
+test('metadata.json carries an explicitly-empty captions object rather than omitting it', async () => {
+  const downloadId = crypto.randomUUID();
+  created.push(ensureDownloadDir(downloadId));
+  const captions = { manual: [], auto: [] };
+
+  await runToCompletion(
+    {
+      downloadId,
+      url: 'https://example.com/watch?v=z3',
+      formatId: 'best',
+      type: 'video',
+      title: 'A video',
+      thumbnail: null,
+      keep: false,
+      captions,
+    },
+    { onComplete: () => {}, onError: () => {} },
+  );
+
+  const metadata = JSON.parse(
+    fs.readFileSync(`${downloadsDir}/${downloadId}/metadata.json`, 'utf8'),
+  );
+  assert.equal('captions' in metadata, true);
+  assert.deepEqual(metadata.captions, { manual: [], auto: [] });
 });
